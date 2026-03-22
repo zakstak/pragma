@@ -135,7 +135,15 @@ install_golangci-lint() {
 install_prettier() {
   if has_tool npm; then
     log_info "Installing prettier via npm..."
-    npm install -g --no-fund --no-audit prettier
+    npm install --no-fund --no-audit --prefix "$PRAGMA_DIR/.npm-packages" prettier
+    # Create a wrapper script in BIN_DIR
+    cat > "$BIN_DIR/prettier" <<'WRAPPER'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
+exec node "$PRAGMA_DIR/.npm-packages/node_modules/.bin/prettier" "$@"
+WRAPPER
+    chmod +x "$BIN_DIR/prettier"
   elif has_tool bun; then
     log_info "Installing prettier via bun..."
     bun install -g prettier
@@ -148,7 +156,14 @@ install_prettier() {
 install_eslint() {
   if has_tool npm; then
     log_info "Installing eslint via npm..."
-    npm install -g --no-fund --no-audit eslint
+    npm install --no-fund --no-audit --prefix "$PRAGMA_DIR/.npm-packages" eslint
+    cat > "$BIN_DIR/eslint" <<'WRAPPER'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
+exec node "$PRAGMA_DIR/.npm-packages/node_modules/.bin/eslint" "$@"
+WRAPPER
+    chmod +x "$BIN_DIR/eslint"
   elif has_tool bun; then
     log_info "Installing eslint via bun..."
     bun install -g eslint
@@ -162,11 +177,21 @@ install_yamllint() {
   if has_tool pip; then
     log_info "Installing yamllint via pip..."
     pip install --break-system-packages --quiet yamllint 2>/dev/null || pip install --quiet yamllint
+  elif has_tool pip3; then
+    log_info "Installing yamllint via pip3..."
+    pip3 install --break-system-packages --quiet yamllint 2>/dev/null || pip3 install --quiet yamllint
   elif has_tool pipx; then
     log_info "Installing yamllint via pipx..."
     pipx install yamllint
+  elif has_tool uv; then
+    log_info "Installing yamllint via uv..."
+    uv tool install yamllint
+  elif has_tool python3; then
+    log_info "Installing yamllint via python3 -m pip..."
+    python3 -m pip install --break-system-packages --quiet yamllint 2>/dev/null \
+      || python3 -m pip install --user --quiet yamllint
   else
-    log_warn "yamllint requires pip or pipx — skipping"
+    log_warn "yamllint requires pip, pipx, uv, or python3 — skipping"
     return 1
   fi
 }
@@ -177,8 +202,10 @@ install_hadolint() {
 }
 
 install_shellcheck() {
+  local v
+  v=$(curl -fsSL "https://api.github.com/repos/koalaman/shellcheck/releases/latest" | grep '"tag_name"' | cut -d '"' -f4)
   download_tarxz shellcheck \
-    "https://github.com/koalaman/shellcheck/releases/latest/download/shellcheck-latest.${OS}.${ARCH_ALT}.tar.xz"
+    "https://github.com/koalaman/shellcheck/releases/download/${v}/shellcheck-${v}.${OS}.${ARCH_ALT}.tar.xz"
 }
 
 install_shfmt() {
