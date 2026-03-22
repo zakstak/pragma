@@ -91,11 +91,27 @@ Pragma will check for required tools during setup. To re-check and install:
 
 Tool install priority: `nix` → `go install` → `cargo install` → `npm` → `pip`
 
+## Docker
+
+Pre-built image with all tools — no build needed:
+
+```bash
+# Pull from GitHub Container Registry
+docker pull ghcr.io/zakstak/pragma:latest
+
+# Run against your repo
+docker run --rm -v $(pwd):/repo ghcr.io/zakstak/pragma:latest --agent /repo
+
+# Or build locally
+docker build -t pragma .
+```
+
 ## Repo Structure
 
 ```
 pragma/
 ├── install.sh           # Bootstrap entrypoint
+├── Dockerfile           # All tools pre-installed
 ├── lefthook.yml         # Shared hook config template
 ├── lib/
 │   ├── common.sh        # Utilities (colors, logging, tool checks)
@@ -107,3 +123,4 @@ pragma/
 │   └── install-tools.sh # Auto-install missing tools
 └── .gitleaks.toml       # Default gitleaks config
 ```
+
