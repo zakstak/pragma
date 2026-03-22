@@ -1,0 +1,5 @@
+# Hooksmith artifacts
+target/
+node_modules/
+.DS_Store
+*.log
