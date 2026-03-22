@@ -1,3 +1,4 @@
+---
 # Pragma — shared git hooks configuration
 # This file is consumed by lefthook either directly or via `remotes:` config.
 #
