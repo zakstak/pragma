@@ -40,6 +40,15 @@ if [[ -d "$PRAGMA_DIR/bin" ]]; then
   export PATH="$PRAGMA_DIR/bin:$PATH"
 fi
 
+# Add GOPATH/bin to PATH so go-installed tools are found
+_gobin="${GOBIN:-$(go env GOBIN 2>/dev/null)}"
+_gobin="${_gobin:-$(go env GOPATH 2>/dev/null)/bin}"
+_gobin="${_gobin:-$HOME/go/bin}"
+if [[ -d "$_gobin" ]] && [[ ":$PATH:" != *":$_gobin:"* ]]; then
+  export PATH="$_gobin:$PATH"
+fi
+unset _gobin
+
 log_header "Pragma Setup"
 log_info "Pragma dir: ${BOLD}$PRAGMA_DIR${RESET}"
 log_info "Target repo:   ${BOLD}$TARGET_REPO${RESET}"
@@ -78,6 +87,15 @@ if ! has_tool lefthook; then
       log_error "lefthook is required. Please install and re-run."
       exit 1
     fi
+  fi
+
+  # Ensure GOPATH/bin is in PATH so we can find the just-installed binary
+  GOBIN_DIR="${GOBIN:-$(go env GOBIN 2>/dev/null)}"
+  GOBIN_DIR="${GOBIN_DIR:-$(go env GOPATH 2>/dev/null)/bin}"
+  GOBIN_DIR="${GOBIN_DIR:-$HOME/go/bin}"
+  if [[ -d "$GOBIN_DIR" ]] && [[ ":$PATH:" != *":$GOBIN_DIR:"* ]]; then
+    export PATH="$GOBIN_DIR:$PATH"
+    hash -r 2>/dev/null || true
   fi
 
   if has_tool lefthook; then
