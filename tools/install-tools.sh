@@ -187,9 +187,15 @@ install_yamllint() {
     log_info "Installing yamllint via uv..."
     uv tool install yamllint
   elif has_tool python3; then
-    log_info "Installing yamllint via python3 -m pip..."
-    python3 -m pip install --break-system-packages --quiet yamllint 2>/dev/null \
-      || python3 -m pip install --user --quiet yamllint
+    log_info "Installing yamllint via python3 venv..."
+    local venv_dir="$PRAGMA_DIR/.venv"
+    python3 -m venv "$venv_dir"
+    "$venv_dir/bin/pip" install --quiet yamllint
+    cat > "$BIN_DIR/yamllint" <<WRAPPER
+#!/usr/bin/env bash
+exec "$venv_dir/bin/yamllint" "\$@"
+WRAPPER
+    chmod +x "$BIN_DIR/yamllint"
   else
     log_warn "yamllint requires pip, pipx, uv, or python3 — skipping"
     return 1
