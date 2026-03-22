@@ -35,6 +35,11 @@ if [[ ! -d "$TARGET_REPO/.git" ]]; then
   exit 1
 fi
 
+# Add pragma/bin to PATH if it exists (extracted Docker tools)
+if [[ -d "$PRAGMA_DIR/bin" ]]; then
+  export PATH="$PRAGMA_DIR/bin:$PATH"
+fi
+
 log_header "Pragma Setup"
 log_info "Pragma dir: ${BOLD}$PRAGMA_DIR${RESET}"
 log_info "Target repo:   ${BOLD}$TARGET_REPO${RESET}"
@@ -155,7 +160,7 @@ log_info "Installing git hooks via lefthook..."
 }
 log_success "Git hooks installed"
 
-# ─── Step 5: Check for required tools ─────────────────────────────────────────
+# ─── Step 5: Install required tools ───────────────────────────────────────────
 
 echo ""
 if $AGENT_MODE; then

@@ -1,4 +1,5 @@
-# Hooksmith artifacts
+# Pragma artifacts
+bin/
 target/
 node_modules/
 .DS_Store

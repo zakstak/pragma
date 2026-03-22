@@ -82,36 +82,22 @@ rm lefthook.yml
 
 ## Installing Missing Tools
 
-Pragma will check for required tools during setup. To re-check and install:
+Pragma downloads pre-built binaries from GitHub Releases — no Go, Rust, or compilation required:
 
 ```bash
 ~/.pragma/tools/install-tools.sh         # interactive
 ~/.pragma/tools/install-tools.sh --agent  # auto-install
 ```
 
-Tool install priority: `nix` → `go install` → `cargo install` → `npm` → `pip`
+Binaries are placed in `pragma/bin/` and automatically added to PATH by the hooks.
 
-## Docker
-
-Pre-built image with all tools — no build needed:
-
-```bash
-# Pull from GitHub Container Registry
-docker pull ghcr.io/zakstak/pragma:latest
-
-# Run against your repo
-docker run --rm -v $(pwd):/repo ghcr.io/zakstak/pragma:latest --agent /repo
-
-# Or build locally
-docker build -t pragma .
-```
+Tools that can't be downloaded as static binaries (prettier, eslint, yamllint) use npm/pip.
 
 ## Repo Structure
 
 ```
 pragma/
 ├── install.sh           # Bootstrap entrypoint
-├── Dockerfile           # All tools pre-installed
 ├── lefthook.yml         # Shared hook config template
 ├── lib/
 │   ├── common.sh        # Utilities (colors, logging, tool checks)
