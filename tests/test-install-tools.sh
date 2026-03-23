@@ -60,13 +60,29 @@ version = "0.1.0"
 edition = "2021"
 EOF
 
-for tool in lefthook gitleaks rustfmt cargo-clippy goimports; do
+for tool in lefthook gitleaks rustfmt goimports; do
   cat >"$bin_dir/$tool" <<'EOF'
 #!/bin/sh
 exit 0
 EOF
   chmod +x "$bin_dir/$tool"
 done
+
+cat >"$bin_dir/cargo" <<'EOF'
+#!/bin/sh
+if [ "$1" = "clippy" ] && [ "$2" = "--version" ]; then
+  if [ "${TEST_CARGO_HAS_CLIPPY:-1}" = "1" ]; then
+    printf '%s\n' "clippy 0.1.0 (test)"
+    exit 0
+  fi
+
+  printf '%s\n' 'error: no such command: `clippy`' >&2
+  exit 101
+fi
+
+exit 0
+EOF
+chmod +x "$bin_dir/cargo"
 
 cat >"$bin_dir/golangci-lint" <<'EOF'
 #!/bin/sh
@@ -90,11 +106,10 @@ EOF
 chmod +x "$bin_dir/golangci-lint"
 
 present_output="$(cd "$repo_dir" && PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent 2>&1)"
-assert_contains "cargo-clippy satisfies clippy requirement" "clippy is available" "$present_output"
-assert_not_contains "cargo-clippy does not trigger reinstall" "Adding clippy via rustup" "$present_output"
+assert_contains "cargo clippy subcommand satisfies clippy requirement" "clippy is available" "$present_output"
+assert_not_contains "available cargo clippy does not trigger reinstall" "Adding clippy via rustup" "$present_output"
 assert_contains "golangci-lint v2 satisfies Go requirement" "golangci-lint is available" "$present_output"
 
-rm "$bin_dir/cargo-clippy"
 rm "$bin_dir/golangci-lint"
 
 cat >"$bin_dir/golangci-lint" <<'EOF'
@@ -131,9 +146,15 @@ printf '%s\n' 'exit 0'
 EOF
 chmod +x "$bin_dir/curl"
 
-missing_output="$(cd "$repo_dir" && PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent 2>&1)"
-assert_contains "missing cargo-clippy is reported as clippy" "clippy is missing" "$missing_output"
-assert_contains "missing cargo-clippy installs via rustup" "Adding clippy via rustup" "$missing_output"
+cat >"$bin_dir/clippy" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "$bin_dir/clippy"
+
+missing_output="$(cd "$repo_dir" && TEST_CARGO_HAS_CLIPPY=0 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent 2>&1)"
+assert_contains "standalone clippy without cargo subcommand is reported missing" "clippy is missing" "$missing_output"
+assert_contains "missing cargo clippy subcommand installs via rustup" "Adding clippy via rustup" "$missing_output"
 assert_contains "golangci-lint v1 is accepted" "golangci-lint is available" "$missing_output"
 assert_not_contains "golangci-lint v1 does not trigger reinstall" "Installed golangci-lint" "$missing_output"
 

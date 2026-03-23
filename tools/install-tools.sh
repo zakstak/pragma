@@ -307,6 +307,16 @@ install_clippy() {
   fi
 }
 
+cargo_has_subcommand() {
+  local subcommand="$1"
+
+  if ! has_tool cargo; then
+    return 1
+  fi
+
+  cargo "$subcommand" --version >/dev/null 2>&1
+}
+
 has_repo_tool() {
   local tool="$1"
 
@@ -315,7 +325,7 @@ has_repo_tool() {
       has_tool golangci-lint
       ;;
     clippy)
-      has_tool cargo-clippy || has_tool clippy
+      cargo_has_subcommand clippy
       ;;
     *)
       has_tool "$tool"
