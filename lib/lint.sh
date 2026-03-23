@@ -3,10 +3,45 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRAGMA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/common.sh"
 source "$SCRIPT_DIR/detect.sh"
 
 # ─── Per-language linters ─────────────────────────────────────────────────────
+
+golangci_repo_config_path() {
+  local candidate
+
+  for candidate in \
+    ".golangci.yml" \
+    ".golangci.yaml" \
+    ".golangci.toml" \
+    ".golangci.json"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+golangci_default_config_path() {
+  local candidate
+
+  for candidate in \
+    "$PRAGMA_DIR/.golangci.yml" \
+    "$PRAGMA_DIR/.golangci.yaml" \
+    "$PRAGMA_DIR/.golangci.toml" \
+    "$PRAGMA_DIR/.golangci.json"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
 
 lint_go() {
   local -a files=("$@")
@@ -16,7 +51,20 @@ lint_go() {
 
   if require_tool golangci-lint "go linter"; then
     log_info "Linting Go files..."
-    golangci-lint run --new-from-rev=HEAD --fix=false 2>&1 || {
+    local -a golangci_args=(run --new-from-rev=HEAD --fix=false)
+    local config_path
+
+    if config_path="$(golangci_repo_config_path)"; then
+      golangci_args+=(--config "$config_path")
+    elif config_path="$(golangci_default_config_path)"; then
+      if golangci_is_v2; then
+        golangci_args+=(--config "$config_path")
+      else
+        log_warn "Detected golangci-lint v1; skipping Pragma's bundled v2 config"
+      fi
+    fi
+
+    golangci-lint "${golangci_args[@]}" 2>&1 || {
       log_error "Go lint failed"
       return 1
     }

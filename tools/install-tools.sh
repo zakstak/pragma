@@ -162,7 +162,7 @@ install_goimports() {
   fi
 }
 
-install_golangci-lint() {
+install_golangci_lint() {
   require_commands curl || return 1
   curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh |
     sh -s -- -b "$BIN_DIR" latest
@@ -307,13 +307,39 @@ install_clippy() {
   fi
 }
 
+cargo_has_subcommand() {
+  local subcommand="$1"
+
+  if ! has_tool cargo; then
+    return 1
+  fi
+
+  cargo "$subcommand" --version >/dev/null 2>&1
+}
+
+has_repo_tool() {
+  local tool="$1"
+
+  case "$tool" in
+    golangci-lint)
+      has_tool golangci-lint
+      ;;
+    clippy)
+      cargo_has_subcommand clippy
+      ;;
+    *)
+      has_tool "$tool"
+      ;;
+  esac
+}
+
 # ─── Language → required tools mapping ────────────────────────────────────────
 
 tools_for_lang() {
   local lang="$1"
   case "$lang" in
     go) echo "goimports golangci-lint" ;;
-    rust) echo "rustfmt" ;;
+    rust) echo "rustfmt clippy" ;;
     typescript) echo "prettier eslint" ;;
     html) echo "prettier" ;;
     yaml) echo "prettier yamllint" ;;
@@ -357,7 +383,7 @@ main() {
   # Check what's missing
   local missing=()
   for tool in "${required_tools[@]}"; do
-    if has_tool "$tool"; then
+    if has_repo_tool "$tool"; then
       log_success "$tool is available"
     else
       missing+=("$tool")
