@@ -8,22 +8,21 @@ if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
   GREEN='\033[0;32m'
   YELLOW='\033[0;33m'
   BLUE='\033[0;34m'
-  MAGENTA='\033[0;35m'
   CYAN='\033[0;36m'
   BOLD='\033[1m'
   DIM='\033[2m'
   RESET='\033[0m'
 else
-  RED='' GREEN='' YELLOW='' BLUE='' MAGENTA='' CYAN='' BOLD='' DIM='' RESET=''
+  RED='' GREEN='' YELLOW='' BLUE='' CYAN='' BOLD='' DIM='' RESET=''
 fi
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
-log_info()    { echo -e "${BLUE}ℹ${RESET} $*"; }
+log_info() { echo -e "${BLUE}ℹ${RESET} $*"; }
 log_success() { echo -e "${GREEN}✔${RESET} $*"; }
-log_warn()    { echo -e "${YELLOW}⚠${RESET} $*"; }
-log_error()   { echo -e "${RED}✖${RESET} $*"; }
-log_header()  { echo -e "\n${BOLD}${CYAN}━━━ $* ━━━${RESET}\n"; }
-log_skip()    { echo -e "${DIM}  ⏭ $*${RESET}"; }
+log_warn() { echo -e "${YELLOW}⚠${RESET} $*"; }
+log_error() { echo -e "${RED}✖${RESET} $*"; }
+log_header() { echo -e "\n${BOLD}${CYAN}━━━ $* ━━━${RESET}\n"; }
+log_skip() { echo -e "${DIM}  ⏭ $*${RESET}"; }
 
 # ─── Tool checks ─────────────────────────────────────────────────────────────
 
@@ -45,23 +44,53 @@ require_tool() {
 
 # ─── File filtering ──────────────────────────────────────────────────────────
 
-# Filter a list of files by extension(s).
-# Usage: filter_by_ext "file1.rs file2.go" rs
-# Can also be piped: echo "files..." | filter_by_ext rs ts
-filter_by_ext() {
-  local files="${1:-}"
+has_ext() {
+  local file="$1"
   shift
-  local exts=("$@")
 
-  # Build grep pattern: \.(rs|go|ts)$
-  local pattern
-  pattern="\\.($(IFS='|'; echo "${exts[*]}"))$"
+  local ext
+  for ext in "$@"; do
+    case "$file" in
+      *".${ext}") return 0 ;;
+    esac
+  done
 
-  if [[ -n "$files" ]]; then
-    echo "$files" | tr ' ' '\n' | grep -E "$pattern" || true
-  else
-    grep -E "$pattern" || true
+  return 1
+}
+
+is_dockerfile_path() {
+  local basename="${1##*/}"
+
+  case "${basename,,}" in
+    dockerfile | dockerfile.* | *.dockerfile) return 0 ;;
+  esac
+
+  return 1
+}
+
+filter_by_ext() {
+  local output_var="$1"
+  shift
+  local -n output_ref="$output_var"
+  local exts=()
+
+  while [[ $# -gt 0 ]] && [[ "$1" != "--" ]]; do
+    exts+=("$1")
+    shift
+  done
+
+  if [[ "${1:-}" == "--" ]]; then
+    shift
   fi
+
+  output_ref=()
+
+  local file
+  for file in "$@"; do
+    if has_ext "$file" "${exts[@]}"; then
+      output_ref+=("$file")
+    fi
+  done
 }
 
 # ─── Pragma location ──────────────────────────────────────────────────────

@@ -22,16 +22,46 @@ mkdir -p "$BIN_DIR"
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
 case "$ARCH" in
-  x86_64)  ARCH_GO="amd64"; ARCH_ALT="x86_64" ;;
-  aarch64|arm64) ARCH_GO="arm64"; ARCH_ALT="aarch64" ;;
-  *) log_error "Unsupported architecture: $ARCH"; exit 1 ;;
+  x86_64)
+    ARCH_GO="amd64"
+    ARCH_ALT="x86_64"
+    ARCH_HADOLINT="x86_64"
+    ;;
+  aarch64 | arm64)
+    ARCH_GO="arm64"
+    ARCH_ALT="aarch64"
+    ARCH_HADOLINT="arm64"
+    ;;
+  *)
+    log_error "Unsupported architecture: $ARCH"
+    exit 1
+    ;;
 esac
 
 # ─── Download helpers ─────────────────────────────────────────────────────────
 
 # Download a binary from a URL and place in BIN_DIR
+require_commands() {
+  local missing=()
+  local tool
+
+  for tool in "$@"; do
+    if ! has_tool "$tool"; then
+      missing+=("$tool")
+    fi
+  done
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    log_error "Missing required tool(s): ${missing[*]}"
+    return 1
+  fi
+
+  return 0
+}
+
 download_binary() {
   local name="$1" url="$2"
+  require_commands curl || return 1
   log_info "Downloading $name..."
   curl -fsSL "$url" -o "$BIN_DIR/$name"
   chmod +x "$BIN_DIR/$name"
@@ -39,7 +69,8 @@ download_binary() {
 
 # Download + extract from a tar.gz (finds the binary inside)
 download_tarball() {
-  local name="$1" url="$2" strip="${3:-0}"
+  local name="$1" url="$2"
+  require_commands curl tar || return 1
   log_info "Downloading $name..."
   local tmp
   tmp=$(mktemp -d)
@@ -61,6 +92,7 @@ download_tarball() {
 # Download + extract from a .tar.xz
 download_tarxz() {
   local name="$1" url="$2"
+  require_commands curl tar || return 1
   log_info "Downloading $name..."
   local tmp
   tmp=$(mktemp -d)
@@ -81,6 +113,7 @@ download_tarxz() {
 # Download + extract from a .zip
 download_zip() {
   local name="$1" url="$2"
+  require_commands curl unzip || return 1
   log_info "Downloading $name..."
   local tmp
   tmp=$(mktemp -d)
@@ -104,6 +137,7 @@ download_zip() {
 
 install_lefthook() {
   local v
+  require_commands curl || return 1
   v=$(curl -fsSL "https://api.github.com/repos/evilmartians/lefthook/releases/latest" | grep '"tag_name"' | cut -d '"' -f4)
   download_tarball lefthook \
     "https://github.com/evilmartians/lefthook/releases/download/${v}/lefthook_${v#v}_${OS}_${ARCH_GO}.tar.gz"
@@ -111,8 +145,9 @@ install_lefthook() {
 
 install_gitleaks() {
   local v
+  require_commands curl || return 1
   v=$(curl -fsSL "https://api.github.com/repos/gitleaks/gitleaks/releases/latest" | grep '"tag_name"' | cut -d '"' -f4)
-  local os_cap="${OS^}"  # Linux, Darwin
+  local os_cap="${OS^}" # Linux, Darwin
   download_tarball gitleaks \
     "https://github.com/gitleaks/gitleaks/releases/download/${v}/gitleaks_${v#v}_${os_cap}_${ARCH_ALT}.tar.gz"
 }
@@ -128,8 +163,9 @@ install_goimports() {
 }
 
 install_golangci-lint() {
-  curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
-    | sh -s -- -b "$BIN_DIR" latest
+  require_commands curl || return 1
+  curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh |
+    sh -s -- -b "$BIN_DIR" latest
 }
 
 install_prettier() {
@@ -137,7 +173,7 @@ install_prettier() {
     log_info "Installing prettier via npm..."
     npm install --no-fund --no-audit --prefix "$PRAGMA_DIR/.npm-packages" prettier
     # Create a wrapper script in BIN_DIR
-    cat > "$BIN_DIR/prettier" <<'WRAPPER'
+    cat >"$BIN_DIR/prettier" <<'WRAPPER'
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
@@ -157,7 +193,7 @@ install_eslint() {
   if has_tool npm; then
     log_info "Installing eslint via npm..."
     npm install --no-fund --no-audit --prefix "$PRAGMA_DIR/.npm-packages" eslint
-    cat > "$BIN_DIR/eslint" <<'WRAPPER'
+    cat >"$BIN_DIR/eslint" <<'WRAPPER'
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
@@ -191,7 +227,7 @@ install_yamllint() {
     local venv_dir="$PRAGMA_DIR/.venv"
     python3 -m venv "$venv_dir"
     "$venv_dir/bin/pip" install --quiet yamllint
-    cat > "$BIN_DIR/yamllint" <<WRAPPER
+    cat >"$BIN_DIR/yamllint" <<WRAPPER
 #!/usr/bin/env bash
 exec "$venv_dir/bin/yamllint" "\$@"
 WRAPPER
@@ -203,12 +239,24 @@ WRAPPER
 }
 
 install_hadolint() {
+  local hadolint_os
+
+  case "$OS" in
+    linux) hadolint_os="linux" ;;
+    darwin) hadolint_os="macos" ;;
+    *)
+      log_warn "hadolint is not available for $OS — skipping"
+      return 1
+      ;;
+  esac
+
   download_binary hadolint \
-    "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-${ARCH_ALT}"
+    "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-${hadolint_os}-${ARCH_HADOLINT}"
 }
 
 install_shellcheck() {
   local v
+  require_commands curl || return 1
   v=$(curl -fsSL "https://api.github.com/repos/koalaman/shellcheck/releases/latest" | grep '"tag_name"' | cut -d '"' -f4)
   download_tarxz shellcheck \
     "https://github.com/koalaman/shellcheck/releases/download/${v}/shellcheck-${v}.${OS}.${ARCH_ALT}.tar.xz"
@@ -216,6 +264,7 @@ install_shellcheck() {
 
 install_shfmt() {
   local v
+  require_commands curl || return 1
   v=$(curl -fsSL "https://api.github.com/repos/mvdan/sh/releases/latest" | grep '"tag_name"' | cut -d '"' -f4)
   download_binary shfmt \
     "https://github.com/mvdan/sh/releases/download/${v}/shfmt_${v}_${OS}_${ARCH_GO}"
@@ -223,15 +272,17 @@ install_shfmt() {
 
 install_taplo() {
   local v
+  require_commands curl gunzip || return 1
   v=$(curl -fsSL "https://api.github.com/repos/tamasfe/taplo/releases/latest" | grep '"tag_name"' | cut -d '"' -f4)
   local gz="taplo-full-${OS}-${ARCH_ALT}.gz"
   log_info "Downloading taplo..."
-  curl -fsSL "https://github.com/tamasfe/taplo/releases/download/${v}/${gz}" \
-    | gunzip > "$BIN_DIR/taplo"
+  curl -fsSL "https://github.com/tamasfe/taplo/releases/download/${v}/${gz}" |
+    gunzip >"$BIN_DIR/taplo"
   chmod +x "$BIN_DIR/taplo"
 }
 
 install_ruff() {
+  require_commands curl || return 1
   curl -fsSL https://astral.sh/ruff/install.sh | RUFF_INSTALL_DIR="$BIN_DIR" sh
 }
 
@@ -261,18 +312,18 @@ install_clippy() {
 tools_for_lang() {
   local lang="$1"
   case "$lang" in
-    go)         echo "goimports golangci-lint" ;;
-    rust)       echo "rustfmt" ;;
+    go) echo "goimports golangci-lint" ;;
+    rust) echo "rustfmt" ;;
     typescript) echo "prettier eslint" ;;
-    html)       echo "prettier" ;;
-    yaml)       echo "prettier yamllint" ;;
-    docker)     echo "hadolint" ;;
-    shell)      echo "shellcheck shfmt" ;;
-    markdown)   echo "prettier" ;;
-    toml)       echo "taplo" ;;
-    json)       echo "prettier" ;;
-    python)     echo "ruff" ;;
-    *)          echo "" ;;
+    html) echo "prettier" ;;
+    yaml) echo "prettier yamllint" ;;
+    docker) echo "hadolint" ;;
+    shell) echo "shellcheck shfmt" ;;
+    markdown) echo "prettier" ;;
+    toml) echo "taplo" ;;
+    json) echo "prettier" ;;
+    python) echo "ruff" ;;
+    *) echo "" ;;
   esac
 }
 
@@ -301,7 +352,7 @@ main() {
       done
       $already || required_tools+=("$tool")
     done
-  done <<< "$langs"
+  done <<<"$langs"
 
   # Check what's missing
   local missing=()
@@ -334,16 +385,10 @@ main() {
 
   local failed=()
   for tool in "${missing[@]}"; do
-    if declare -f "install_${tool}" > /dev/null 2>&1; then
-      if "install_${tool}"; then
-        log_success "Installed $tool"
-      else
-        log_error "Failed to install $tool"
-        failed+=("$tool")
-      fi
-    # Handle tools with hyphens (golangci-lint)
-    elif declare -f "install_${tool//-/_}" > /dev/null 2>&1; then
-      if "install_${tool}"; then
+    local installer_name="install_${tool//-/_}"
+
+    if declare -f "$installer_name" >/dev/null 2>&1; then
+      if "$installer_name"; then
         log_success "Installed $tool"
       else
         log_error "Failed to install $tool"

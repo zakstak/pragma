@@ -9,10 +9,10 @@ source "$SCRIPT_DIR/detect.sh"
 # ─── Per-language linters ─────────────────────────────────────────────────────
 
 lint_go() {
-  local files="$1"
-  local go_files
-  go_files=$(filter_by_ext "$files" go)
-  [[ -z "$go_files" ]] && return 0
+  local -a files=("$@")
+  local -a go_files=()
+  filter_by_ext go_files go -- "${files[@]}"
+  [[ ${#go_files[@]} -eq 0 ]] && return 0
 
   if require_tool golangci-lint "go linter"; then
     log_info "Linting Go files..."
@@ -35,10 +35,10 @@ lint_go() {
 }
 
 lint_rust() {
-  local files="$1"
-  local rs_files
-  rs_files=$(filter_by_ext "$files" rs)
-  [[ -z "$rs_files" ]] && return 0
+  local -a files=("$@")
+  local -a rs_files=()
+  filter_by_ext rs_files rs -- "${files[@]}"
+  [[ ${#rs_files[@]} -eq 0 ]] && return 0
 
   if has_tool cargo; then
     log_info "Linting Rust files (clippy)..."
@@ -53,14 +53,14 @@ lint_rust() {
 }
 
 lint_typescript() {
-  local files="$1"
-  local ts_files
-  ts_files=$(filter_by_ext "$files" ts tsx js jsx)
-  [[ -z "$ts_files" ]] && return 0
+  local -a files=("$@")
+  local -a ts_files=()
+  filter_by_ext ts_files ts tsx js jsx -- "${files[@]}"
+  [[ ${#ts_files[@]} -eq 0 ]] && return 0
 
   if require_tool eslint "typescript linter"; then
     log_info "Linting TypeScript/JS files..."
-    echo "$ts_files" | xargs eslint 2>&1 || {
+    eslint "${ts_files[@]}" 2>&1 || {
       log_error "ESLint failed"
       return 1
     }
@@ -70,14 +70,14 @@ lint_typescript() {
 }
 
 lint_yaml() {
-  local files="$1"
-  local yaml_files
-  yaml_files=$(filter_by_ext "$files" yml yaml)
-  [[ -z "$yaml_files" ]] && return 0
+  local -a files=("$@")
+  local -a yaml_files=()
+  filter_by_ext yaml_files yml yaml -- "${files[@]}"
+  [[ ${#yaml_files[@]} -eq 0 ]] && return 0
 
   if require_tool yamllint "yaml linter"; then
     log_info "Linting YAML files..."
-    echo "$yaml_files" | xargs yamllint -s 2>&1 || {
+    yamllint -s "${yaml_files[@]}" 2>&1 || {
       log_error "yamllint failed"
       return 1
     }
@@ -87,14 +87,21 @@ lint_yaml() {
 }
 
 lint_docker() {
-  local files="$1"
-  local docker_files
-  docker_files=$(echo "$files" | tr ' ' '\n' | grep -iE '(Dockerfile|\.dockerfile)$' || true)
-  [[ -z "$docker_files" ]] && return 0
+  local -a files=("$@")
+  local -a docker_files=()
+  local file
+
+  for file in "${files[@]}"; do
+    if is_dockerfile_path "$file"; then
+      docker_files+=("$file")
+    fi
+  done
+
+  [[ ${#docker_files[@]} -eq 0 ]] && return 0
 
   if require_tool hadolint "dockerfile linter"; then
     log_info "Linting Dockerfiles..."
-    echo "$docker_files" | xargs hadolint 2>&1 || {
+    hadolint "${docker_files[@]}" 2>&1 || {
       log_error "hadolint failed"
       return 1
     }
@@ -104,14 +111,14 @@ lint_docker() {
 }
 
 lint_shell() {
-  local files="$1"
-  local sh_files
-  sh_files=$(filter_by_ext "$files" sh)
-  [[ -z "$sh_files" ]] && return 0
+  local -a files=("$@")
+  local -a sh_files=()
+  filter_by_ext sh_files sh -- "${files[@]}"
+  [[ ${#sh_files[@]} -eq 0 ]] && return 0
 
   if require_tool shellcheck "shell linter"; then
     log_info "Linting Shell files..."
-    echo "$sh_files" | xargs shellcheck 2>&1 || {
+    shellcheck -e SC2329 -x -P SCRIPTDIR "${sh_files[@]}" 2>&1 || {
       log_error "shellcheck failed"
       return 1
     }
@@ -121,14 +128,14 @@ lint_shell() {
 }
 
 lint_toml() {
-  local files="$1"
-  local toml_files
-  toml_files=$(filter_by_ext "$files" toml)
-  [[ -z "$toml_files" ]] && return 0
+  local -a files=("$@")
+  local -a toml_files=()
+  filter_by_ext toml_files toml -- "${files[@]}"
+  [[ ${#toml_files[@]} -eq 0 ]] && return 0
 
   if require_tool taplo "toml linter"; then
     log_info "Checking TOML files..."
-    echo "$toml_files" | xargs taplo check 2>&1 || {
+    taplo check "${toml_files[@]}" 2>&1 || {
       log_error "taplo check failed"
       return 1
     }
@@ -138,14 +145,14 @@ lint_toml() {
 }
 
 lint_python() {
-  local files="$1"
-  local py_files
-  py_files=$(filter_by_ext "$files" py)
-  [[ -z "$py_files" ]] && return 0
+  local -a files=("$@")
+  local -a py_files=()
+  filter_by_ext py_files py -- "${files[@]}"
+  [[ ${#py_files[@]} -eq 0 ]] && return 0
 
   if require_tool ruff "python linter"; then
     log_info "Linting Python files..."
-    echo "$py_files" | xargs ruff check 2>&1 || {
+    ruff check "${py_files[@]}" 2>&1 || {
       log_error "ruff check failed"
       return 1
     }
@@ -170,8 +177,8 @@ LINTERS=(
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
-  local files="${*:-}"
-  if [[ -z "$files" ]]; then
+  local -a files=("$@")
+  if [[ ${#files[@]} -eq 0 ]]; then
     log_skip "No files to lint"
     exit 0
   fi
@@ -179,7 +186,7 @@ main() {
   log_header "Linting"
 
   local langs
-  langs=$(detect_from_files "$files")
+  langs=$(detect_from_files "${files[@]}")
 
   if [[ -z "$langs" ]]; then
     log_skip "No recognized languages in staged files"
@@ -190,7 +197,7 @@ main() {
     local lang="${entry%%:*}"
     local func="${entry##*:}"
     if echo "$langs" | grep -qx "$lang"; then
-      "$func" "$files" || record_failure
+      "$func" "${files[@]}" || record_failure
     fi
   done
 

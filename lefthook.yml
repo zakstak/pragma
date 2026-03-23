@@ -1,26 +1,16 @@
 ---
-# Pragma — shared git hooks configuration
-# This file is consumed by lefthook either directly or via `remotes:` config.
-#
-# In target repos, add to lefthook.yml:
-#   remotes:
-#     - git_url: https://github.com/zakstak/pragma
-#       ref: main
-#       configs:
-#         - lefthook.yml
-
 pre-commit:
   parallel: true
   commands:
     format:
       glob: "*.{go,rs,ts,tsx,js,jsx,html,htm,yml,yaml,sh,md,toml,json,py}"
       run: >
-        {pragma_dir}/lib/format.sh {staged_files}
+        ./lib/format.sh {staged_files}
 
     lint:
       glob: "*.{go,rs,ts,tsx,js,jsx,yml,yaml,sh,toml,py,dockerfile,Dockerfile}"
       run: >
-        {pragma_dir}/lib/lint.sh {staged_files}
+        ./lib/lint.sh {staged_files}
 
     gitleaks:
       run: >
@@ -33,4 +23,4 @@ pre-push:
   commands:
     test:
       run: >
-        {pragma_dir}/lib/test.sh
+        ./lib/test.sh

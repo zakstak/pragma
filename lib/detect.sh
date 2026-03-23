@@ -12,70 +12,58 @@ source "$SCRIPT_DIR/common.sh"
 # ─── Detection from file list (staged files) ─────────────────────────────────
 
 detect_from_files() {
-  local files="$1"
   local langs=()
+  local file
 
-  # Normalize: convert spaces to newlines for grep matching
-  local file_lines
-  file_lines=$(echo "$files" | tr ' ' '\n')
+  for file in "$@"; do
+    case "$file" in
+      *.go) langs+=("go") ;;
+    esac
 
-  # Go
-  if echo "$file_lines" | grep -qE '\.go$'; then
-    langs+=("go")
+    case "$file" in
+      *.rs) langs+=("rust") ;;
+    esac
+
+    case "$file" in
+      *.ts | *.tsx | *.js | *.jsx) langs+=("typescript") ;;
+    esac
+
+    case "$file" in
+      *.html | *.htm) langs+=("html") ;;
+    esac
+
+    case "$file" in
+      *.yml | *.yaml) langs+=("yaml") ;;
+    esac
+
+    if is_dockerfile_path "$file"; then
+      langs+=("docker")
+    fi
+
+    case "$file" in
+      *.sh) langs+=("shell") ;;
+    esac
+
+    case "$file" in
+      *.md) langs+=("markdown") ;;
+    esac
+
+    case "$file" in
+      *.toml) langs+=("toml") ;;
+    esac
+
+    case "$file" in
+      *.json) langs+=("json") ;;
+    esac
+
+    case "$file" in
+      *.py) langs+=("python") ;;
+    esac
+  done
+
+  if [[ ${#langs[@]} -gt 0 ]]; then
+    printf '%s\n' "${langs[@]}" | sort -u
   fi
-
-  # Rust
-  if echo "$file_lines" | grep -qE '\.rs$'; then
-    langs+=("rust")
-  fi
-
-  # TypeScript / JavaScript
-  if echo "$file_lines" | grep -qE '\.(ts|tsx|js|jsx)$'; then
-    langs+=("typescript")
-  fi
-
-  # HTML
-  if echo "$file_lines" | grep -qE '\.html?$'; then
-    langs+=("html")
-  fi
-
-  # YAML
-  if echo "$file_lines" | grep -qE '\.(yml|yaml)$'; then
-    langs+=("yaml")
-  fi
-
-  # Docker
-  if echo "$file_lines" | grep -qiE '(Dockerfile|\.dockerfile)$'; then
-    langs+=("docker")
-  fi
-
-  # Shell
-  if echo "$file_lines" | grep -qE '\.sh$'; then
-    langs+=("shell")
-  fi
-
-  # Markdown
-  if echo "$file_lines" | grep -qE '\.md$'; then
-    langs+=("markdown")
-  fi
-
-  # TOML
-  if echo "$file_lines" | grep -qE '\.toml$'; then
-    langs+=("toml")
-  fi
-
-  # JSON
-  if echo "$file_lines" | grep -qE '\.json$'; then
-    langs+=("json")
-  fi
-
-  # Python
-  if echo "$file_lines" | grep -qE '\.py$'; then
-    langs+=("python")
-  fi
-
-  # Deduplicate and print
-  printf '%s\n' "${langs[@]}" | sort -u
 }
 
 # ─── Detection from repo markers (full repo scan) ────────────────────────────
@@ -149,7 +137,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   case "${1:-}" in
     --files)
       shift
-      detect_from_files "$*"
+      detect_from_files "$@"
       ;;
     --repo)
       detect_from_repo
