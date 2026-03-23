@@ -313,7 +313,7 @@ tools_for_lang() {
   local lang="$1"
   case "$lang" in
     go) echo "goimports golangci-lint" ;;
-    rust) echo "rustfmt" ;;
+    rust) echo "rustfmt clippy" ;;
     typescript) echo "prettier eslint" ;;
     html) echo "prettier" ;;
     yaml) echo "prettier yamllint" ;;
