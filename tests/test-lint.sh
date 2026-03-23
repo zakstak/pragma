@@ -63,8 +63,9 @@ assert_contains "Go lint uses pragma default config" "--config $PRAGMA_DIR/.gola
 assert_contains "Go lint scopes to new changes" "--new-from-rev=HEAD" "$go_args"
 assert_contains "Go lint does not autofix" "--fix=false" "$go_args"
 
-cat >"$repo_dir/.golangci.yml" <<'EOF'
-version: "2"
+cat >"$repo_dir/.golangci.toml" <<'EOF'
+[linters]
+default = "none"
 EOF
 
 (
@@ -74,7 +75,26 @@ EOF
 )
 
 go_repo_args="$(<"$tmp_dir/golangci.args")"
-assert_contains "Repo Go config overrides pragma default" "--config .golangci.yml" "$go_repo_args"
+assert_contains "Repo TOML config overrides pragma default" "--config .golangci.toml" "$go_repo_args"
+
+rm "$repo_dir/.golangci.toml"
+
+cat >"$repo_dir/.golangci.json" <<'EOF'
+{
+  "linters": {
+    "default": "none"
+  }
+}
+EOF
+
+(
+  cd "$repo_dir"
+  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
+    bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
+)
+
+go_repo_json_args="$(<"$tmp_dir/golangci.args")"
+assert_contains "Repo JSON config overrides pragma default" "--config .golangci.json" "$go_repo_json_args"
 
 (
   cd "$repo_dir"

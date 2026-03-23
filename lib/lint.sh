@@ -12,14 +12,22 @@ source "$SCRIPT_DIR/detect.sh"
 golangci_config_path() {
   local candidate
 
-  for candidate in ".golangci.yml" ".golangci.yaml"; do
+  for candidate in \
+    ".golangci.yml" \
+    ".golangci.yaml" \
+    ".golangci.toml" \
+    ".golangci.json"; do
     if [[ -f "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return 0
     fi
   done
 
-  for candidate in "$PRAGMA_DIR/.golangci.yml" "$PRAGMA_DIR/.golangci.yaml"; do
+  for candidate in \
+    "$PRAGMA_DIR/.golangci.yml" \
+    "$PRAGMA_DIR/.golangci.yaml" \
+    "$PRAGMA_DIR/.golangci.toml" \
+    "$PRAGMA_DIR/.golangci.json"; do
     if [[ -f "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return 0
