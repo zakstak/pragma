@@ -162,7 +162,7 @@ install_goimports() {
   fi
 }
 
-install_golangci-lint() {
+install_golangci_lint() {
   require_commands curl || return 1
   curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh |
     sh -s -- -b "$BIN_DIR" latest
@@ -311,6 +311,9 @@ has_repo_tool() {
   local tool="$1"
 
   case "$tool" in
+    golangci-lint)
+      has_tool golangci-lint && golangci_is_v2
+      ;;
     clippy)
       has_tool cargo-clippy || has_tool clippy
       ;;
