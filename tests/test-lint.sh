@@ -103,7 +103,7 @@ assert_contains "Repo JSON config overrides pragma default" "--config .golangci.
 )
 
 rust_args="$(<"$tmp_dir/cargo.args")"
-assert_contains "Rust lint runs clippy" "clippy --workspace --all-targets --all-features -- -D warnings" "$rust_args"
+assert_contains "Rust lint runs clippy" "clippy --all-targets --all-features -- -D warnings" "$rust_args"
 
 printf '\nPassed: %s\n' "$PASS"
 printf 'Failed: %s\n' "$FAIL"

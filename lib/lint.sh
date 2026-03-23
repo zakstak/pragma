@@ -78,7 +78,7 @@ lint_rust() {
 
   if has_tool cargo; then
     log_info "Linting Rust files (clippy)..."
-    cargo clippy --workspace --all-targets --all-features -- -D warnings 2>&1 || {
+    cargo clippy --all-targets --all-features -- -D warnings 2>&1 || {
       log_error "Rust lint (clippy) failed"
       return 1
     }
