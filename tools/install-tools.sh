@@ -312,7 +312,7 @@ has_repo_tool() {
 
   case "$tool" in
     golangci-lint)
-      has_tool golangci-lint && golangci_is_v2
+      has_tool golangci-lint
       ;;
     clippy)
       has_tool cargo-clippy || has_tool clippy
