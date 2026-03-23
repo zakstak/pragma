@@ -307,6 +307,19 @@ install_clippy() {
   fi
 }
 
+has_repo_tool() {
+  local tool="$1"
+
+  case "$tool" in
+    clippy)
+      has_tool cargo-clippy || has_tool clippy
+      ;;
+    *)
+      has_tool "$tool"
+      ;;
+  esac
+}
+
 # ─── Language → required tools mapping ────────────────────────────────────────
 
 tools_for_lang() {
@@ -357,7 +370,7 @@ main() {
   # Check what's missing
   local missing=()
   for tool in "${required_tools[@]}"; do
-    if has_tool "$tool"; then
+    if has_repo_tool "$tool"; then
       log_success "$tool is available"
     else
       missing+=("$tool")
