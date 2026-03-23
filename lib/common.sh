@@ -42,6 +42,40 @@ require_tool() {
   return 0
 }
 
+golangci_version_text() {
+  if ! has_tool golangci-lint; then
+    return 1
+  fi
+
+  local output=""
+
+  output="$(golangci-lint version --format short 2>/dev/null || true)"
+  [[ -n "$output" ]] || output="$(golangci-lint version --short 2>/dev/null || true)"
+  [[ -n "$output" ]] || output="$(golangci-lint version 2>/dev/null || true)"
+  [[ -n "$output" ]] || output="$(golangci-lint --version 2>/dev/null || true)"
+  [[ -n "$output" ]] || return 1
+
+  printf '%s\n' "$output"
+}
+
+golangci_major_version() {
+  local output
+  output="$(golangci_version_text)" || return 1
+
+  if [[ "$output" =~ (^|[^[:alnum:]])v?([0-9]+)(\.[0-9]+){0,2}([^[:alnum:]]|$) ]]; then
+    printf '%s\n' "${BASH_REMATCH[2]}"
+    return 0
+  fi
+
+  return 1
+}
+
+golangci_is_v2() {
+  local major
+  major="$(golangci_major_version)" || return 1
+  [[ "$major" -ge 2 ]]
+}
+
 # ─── File filtering ──────────────────────────────────────────────────────────
 
 has_ext() {

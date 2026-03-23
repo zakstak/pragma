@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/detect.sh"
 
 # ─── Per-language linters ─────────────────────────────────────────────────────
 
-golangci_config_path() {
+golangci_repo_config_path() {
   local candidate
 
   for candidate in \
@@ -22,6 +22,12 @@ golangci_config_path() {
       return 0
     fi
   done
+
+  return 1
+}
+
+golangci_default_config_path() {
+  local candidate
 
   for candidate in \
     "$PRAGMA_DIR/.golangci.yml" \
@@ -48,8 +54,14 @@ lint_go() {
     local -a golangci_args=(run --new-from-rev=HEAD --fix=false)
     local config_path
 
-    if config_path="$(golangci_config_path)"; then
+    if config_path="$(golangci_repo_config_path)"; then
       golangci_args+=(--config "$config_path")
+    elif config_path="$(golangci_default_config_path)"; then
+      if golangci_is_v2; then
+        golangci_args+=(--config "$config_path")
+      else
+        log_warn "Detected golangci-lint v1; skipping Pragma's bundled v2 config"
+      fi
     fi
 
     golangci-lint "${golangci_args[@]}" 2>&1 || {

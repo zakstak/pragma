@@ -21,6 +21,20 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local label="$1"
+  local unexpected="$2"
+  local actual="$3"
+
+  if echo "$actual" | grep -Fq -- "$unexpected"; then
+    printf 'FAIL: %s — did not expect %s\n' "$label" "$unexpected"
+    FAIL=$((FAIL + 1))
+  else
+    printf 'PASS: %s\n' "$label"
+    PASS=$((PASS + 1))
+  fi
+}
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -30,6 +44,26 @@ mkdir -p "$bin_dir" "$repo_dir/src"
 
 cat >"$bin_dir/golangci-lint" <<'EOF'
 #!/usr/bin/env bash
+if [[ "$1" == "version" ]]; then
+  if [[ "${2:-}" == "--format" && "${3:-}" == "short" ]]; then
+    printf '%s\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
+    exit 0
+  fi
+
+  if [[ "${2:-}" == "--short" ]]; then
+    printf '%s\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
+    exit 0
+  fi
+
+  printf 'golangci-lint has version %s built with go1.25.0 from test\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
+  exit 0
+fi
+
+if [[ "$1" == "--version" ]]; then
+  printf 'golangci-lint has version %s built with go1.25.0 from test\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
+  exit 0
+fi
+
 printf '%s\n' "$*" >"$TEST_CAPTURE_DIR/golangci.args"
 EOF
 chmod +x "$bin_dir/golangci-lint"
@@ -62,6 +96,15 @@ go_args="$(<"$tmp_dir/golangci.args")"
 assert_contains "Go lint uses pragma default config" "--config $PRAGMA_DIR/.golangci.yml" "$go_args"
 assert_contains "Go lint scopes to new changes" "--new-from-rev=HEAD" "$go_args"
 assert_contains "Go lint does not autofix" "--fix=false" "$go_args"
+
+(
+  cd "$repo_dir"
+  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v1.64.8" \
+    bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
+)
+
+go_v1_args="$(<"$tmp_dir/golangci.args")"
+assert_not_contains "Go lint skips bundled config for golangci-lint v1" "--config $PRAGMA_DIR/.golangci.yml" "$go_v1_args"
 
 cat >"$repo_dir/.golangci.toml" <<'EOF'
 [linters]
