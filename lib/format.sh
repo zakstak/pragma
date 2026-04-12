@@ -9,6 +9,20 @@ source "$SCRIPT_DIR/detect.sh"
 PRAGMA_OUTPUT_FORMAT="${PRAGMA_OUTPUT_FORMAT:-gpt}"
 FORMAT_RERUN="./lib/format.sh <staged-files>"
 
+path_in_list() {
+  local needle="$1"
+  shift
+
+  local candidate
+  for candidate in "$@"; do
+    if [[ "$candidate" == "$needle" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 # ─── Per-language formatters ──────────────────────────────────────────────────
 
 format_go() {
@@ -35,15 +49,73 @@ format_go() {
 format_rust() {
   local -a files=("$@")
   local -a rs_files=()
+  local -a cargo_extra_files=()
+  local -A rust_file_hashes_before=()
+  local -A rust_file_hashes_after=()
+  local dirty_file
+  local file_hash
+  local rustfmt_output=""
+  local rustfmt_status=0
   filter_by_ext rs_files rs -- "${files[@]}"
   [[ ${#rs_files[@]} -eq 0 ]] && return 0
 
   if has_tool rustfmt; then
     log_info "Formatting Rust files..."
-    if ! pragma_run "rustfmt" "fmt" 0 "" "$FORMAT_RERUN" "rust formatting failed" rustfmt --edition 2021 "${rs_files[@]}"; then
+    set +e
+    rustfmt_output="$(rustfmt --edition 2021 "${rs_files[@]}" 2>&1)"
+    rustfmt_status=$?
+    set -e
+
+    if [[ $rustfmt_status -ne 0 ]]; then
       if has_tool cargo; then
+        while IFS= read -r -d '' dirty_file; do
+          if path_in_list "$dirty_file" "${rs_files[@]}"; then
+            continue
+          fi
+
+          [[ -f "$dirty_file" ]] || continue
+          file_hash="$(git hash-object --no-filters "$dirty_file")"
+          rust_file_hashes_before["$dirty_file"]="$file_hash"
+        done < <(git ls-files -z --cached --others --exclude-standard -- '*.rs')
+
         pragma_run "cargo" "fmt" 0 "" "$FORMAT_RERUN" "rust formatting failed" cargo fmt || return 1
+
+        while IFS= read -r -d '' dirty_file; do
+          if path_in_list "$dirty_file" "${rs_files[@]}"; then
+            continue
+          fi
+
+          [[ -f "$dirty_file" ]] || continue
+          file_hash="$(git hash-object --no-filters "$dirty_file")"
+          rust_file_hashes_after["$dirty_file"]="$file_hash"
+        done < <(git ls-files -z --cached --others --exclude-standard -- '*.rs')
+
+        for dirty_file in "${!rust_file_hashes_after[@]}"; do
+          if [[ -z ${rust_file_hashes_before["$dirty_file"]+x} ]]; then
+            cargo_extra_files+=("$dirty_file")
+            continue
+          fi
+
+          if [[ "${rust_file_hashes_before["$dirty_file"]}" != "${rust_file_hashes_after["$dirty_file"]}" ]]; then
+            cargo_extra_files+=("$dirty_file")
+          fi
+        done
+
+        for dirty_file in "${!rust_file_hashes_before[@]}"; do
+          if [[ -z ${rust_file_hashes_after["$dirty_file"]+x} ]]; then
+            cargo_extra_files+=("$dirty_file")
+          fi
+        done
+
+        if [[ ${#cargo_extra_files[@]} -gt 0 ]]; then
+          pragma_add_failure "cargo" "fmt" 0 "" "$FORMAT_RERUN" "cargo fmt touched additional files" "$(printf '%s\n' "${cargo_extra_files[@]}")" 1
+          return 1
+        fi
       else
+        if pragma_human_output_enabled && [[ -n "$rustfmt_output" ]]; then
+          printf '%s\n' "$rustfmt_output" >&2
+        fi
+        pragma_add_failure "rustfmt" "fmt" 0 "" "$FORMAT_RERUN" "rust formatting failed" "$rustfmt_output" "$rustfmt_status"
         return 1
       fi
     fi
