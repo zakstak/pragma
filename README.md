@@ -38,6 +38,39 @@ git clone https://github.com/zakstak/pragma.git ~/.pragma
 
 - **Runs tests** for all detected languages
 
+## Hook Output
+
+Hook scripts are quiet on success. On failure they emit one compact JSON line
+that is optimized for GPT-style agents and other automation.
+
+```json
+{
+  "v": 1,
+  "hook": "pre-push",
+  "step": "test",
+  "fails": [
+    {
+      "tool": "npm",
+      "cls": "test",
+      "skip": 1,
+      "skip_cmd": "PRAGMA_SKIP_TESTS=1 git push",
+      "rerun": "./lib/test.sh",
+      "msg": "npm tests failed",
+      "tail": "FAIL suite\nECONNREFUSED",
+      "code": 1
+    }
+  ],
+  "code": 1
+}
+```
+
+If you want the older human-readable output while debugging locally:
+
+```bash
+PRAGMA_OUTPUT_FORMAT=human git commit
+PRAGMA_OUTPUT_FORMAT=human git push
+```
+
 ## Supported Languages
 
 | Language   | Formatter   | Linter          | Test Runner             |
@@ -79,6 +112,9 @@ No configuration needed — it figures out what to run.
 # Skip all hooks for one commit/push
 git commit --no-verify
 git push --no-verify
+
+# Skip only pre-push tests
+PRAGMA_SKIP_TESTS=1 git push
 ```
 
 ## Uninstall
