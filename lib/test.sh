@@ -7,31 +7,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 source "$SCRIPT_DIR/detect.sh"
 
+PRAGMA_OUTPUT_FORMAT="${PRAGMA_OUTPUT_FORMAT:-gpt}"
+TEST_RERUN="./lib/test.sh"
+TEST_SKIP_CMD="PRAGMA_SKIP_TESTS=1 git push"
+
 # ─── Per-language test runners ────────────────────────────────────────────────
 
 test_go() {
   if ! has_tool go; then
-    log_warn "go not found, skipping Go tests"
+    log_warn "go not found, cannot run Go tests"
+    pragma_add_failure "go" "tool" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "missing tool: go" "" 1
     return 1
   fi
   log_info "Running Go tests..."
-  go test ./... 2>&1 || {
-    log_error "Go tests failed"
-    return 1
-  }
+  pragma_run "go" "test" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "go tests failed" go test ./... || return 1
   log_success "Go tests passed"
 }
 
 test_rust() {
   if ! has_tool cargo; then
-    log_warn "cargo not found, skipping Rust tests"
+    log_warn "cargo not found, cannot run Rust tests"
+    pragma_add_failure "cargo" "tool" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "missing tool: cargo" "" 1
     return 1
   fi
   log_info "Running Rust tests..."
-  cargo test 2>&1 || {
-    log_error "Rust tests failed"
-    return 1
-  }
+  pragma_run "cargo" "test" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "rust tests failed" cargo test || return 1
   log_success "Rust tests passed"
 }
 
@@ -41,10 +41,7 @@ test_typescript() {
   # Prefer bun, then npm
   if [[ -f "bun.lock" ]] || [[ -f "bun.lockb" ]]; then
     if has_tool bun; then
-      bun test 2>&1 || {
-        log_error "Bun tests failed"
-        return 1
-      }
+      pragma_run "bun" "test" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "bun tests failed" bun test || return 1
       log_success "TypeScript tests passed (bun)"
       return 0
     fi
@@ -54,12 +51,13 @@ test_typescript() {
     # Check if a test script exists
     if grep -q '"test"' package.json 2>/dev/null; then
       if has_tool npm; then
-        npm test 2>&1 || {
-          log_error "npm tests failed"
-          return 1
-        }
+        pragma_run "npm" "test" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "npm tests failed" npm test || return 1
         log_success "TypeScript tests passed (npm)"
         return 0
+      else
+        log_warn "npm not found, cannot run TypeScript tests"
+        pragma_add_failure "npm" "tool" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "missing tool: npm" "" 1
+        return 1
       fi
     else
       log_skip "No test script in package.json"
@@ -73,21 +71,16 @@ test_typescript() {
 
 test_python() {
   if ! has_tool pytest && ! has_tool python; then
-    log_warn "pytest/python not found, skipping Python tests"
+    log_warn "pytest/python not found, cannot run Python tests"
+    pragma_add_failure "pytest" "tool" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "missing tool: pytest or python" "" 1
     return 1
   fi
 
   log_info "Running Python tests..."
   if has_tool pytest; then
-    pytest 2>&1 || {
-      log_error "Python tests failed"
-      return 1
-    }
+    pragma_run "pytest" "test" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "python tests failed" pytest || return 1
   else
-    python -m pytest 2>&1 || {
-      log_error "Python tests failed"
-      return 1
-    }
+    pragma_run "python" "test" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "python tests failed" python -m pytest || return 1
   fi
   log_success "Python tests passed"
 }
@@ -105,6 +98,12 @@ TESTERS=(
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
+  pragma_set_context "pre-push" "test"
+
+  if [[ "${PRAGMA_SKIP_TESTS:-0}" == "1" ]]; then
+    exit 0
+  fi
+
   log_header "Running Tests"
 
   local langs

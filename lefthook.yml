@@ -14,7 +14,7 @@ pre-commit:
 
     gitleaks:
       run: >
-        gitleaks protect --staged --redact
+        ./lib/secrets.sh
       skip:
         - merge
         - rebase
