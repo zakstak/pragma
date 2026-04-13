@@ -17,12 +17,39 @@ else
 fi
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
-log_info() { echo -e "${BLUE}ℹ${RESET} $*"; }
-log_success() { echo -e "${GREEN}✔${RESET} $*"; }
-log_warn() { echo -e "${YELLOW}⚠${RESET} $*"; }
-log_error() { echo -e "${RED}✖${RESET} $*"; }
-log_header() { echo -e "\n${BOLD}${CYAN}━━━ $* ━━━${RESET}\n"; }
-log_skip() { echo -e "${DIM}  ⏭ $*${RESET}"; }
+pragma_human_output_enabled() {
+  [[ "${PRAGMA_OUTPUT_FORMAT:-human}" != "gpt" ]]
+}
+
+log_info() {
+  pragma_human_output_enabled || return 0
+  echo -e "${BLUE}ℹ${RESET} $*"
+}
+
+log_success() {
+  pragma_human_output_enabled || return 0
+  echo -e "${GREEN}✔${RESET} $*"
+}
+
+log_warn() {
+  pragma_human_output_enabled || return 0
+  echo -e "${YELLOW}⚠${RESET} $*"
+}
+
+log_error() {
+  pragma_human_output_enabled || return 0
+  echo -e "${RED}✖${RESET} $*"
+}
+
+log_header() {
+  pragma_human_output_enabled || return 0
+  echo -e "\n${BOLD}${CYAN}━━━ $* ━━━${RESET}\n"
+}
+
+log_skip() {
+  pragma_human_output_enabled || return 0
+  echo -e "${DIM}  ⏭ $*${RESET}"
+}
 
 # ─── Tool checks ─────────────────────────────────────────────────────────────
 
@@ -136,8 +163,126 @@ pragma_dir() {
   echo "$dir"
 }
 
-# ─── Exit tracking ───────────────────────────────────────────────────────────
+PRAGMA_HOOK="${PRAGMA_HOOK:-unknown}"
+PRAGMA_STEP="${PRAGMA_STEP:-unknown}"
 PRAGMA_EXIT_CODE=0
+PRAGMA_FAILURES=()
+
+pragma_set_context() {
+  PRAGMA_HOOK="$1"
+  PRAGMA_STEP="$2"
+}
+
+pragma_sanitize_machine_text() {
+  local input="${1-}"
+  printf '%s' "$input" | LC_ALL=C sed -E $'s/\x1B\[[0-9;?]*[ -/]*[@-~]//g; s/\x1B[@-_]//g' | LC_ALL=C tr -d '\000-\010\013\014\016-\037'
+}
+
+pragma_json_escape() {
+  local value
+  value="$(pragma_sanitize_machine_text "${1-}")"
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  value=${value//$'\n'/\\n}
+  value=${value//$'\r'/\\r}
+  value=${value//$'\t'/\\t}
+  printf '%s' "$value"
+}
+
+pragma_compact_tail() {
+  local input
+  input="$(pragma_sanitize_machine_text "${1-}")"
+  input=${input//$'\r'/}
+
+  local -a lines=()
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && lines+=("$line")
+  done <<<"$input"
+
+  local start=0
+  local total=${#lines[@]}
+  if ((total > 5)); then
+    start=$((total - 5))
+  fi
+
+  local output=""
+  local i
+  for ((i = start; i < total; i++)); do
+    if [[ -n "$output" ]]; then
+      output+=$'\n'
+    fi
+    output+="${lines[i]}"
+  done
+
+  if ((${#output} > 320)); then
+    output="${output: -320}"
+  fi
+
+  printf '%s' "$output"
+}
+
+pragma_add_failure() {
+  local tool="$1"
+  local cls="$2"
+  local skip="$3"
+  local skip_cmd="$4"
+  local rerun="$5"
+  local msg="$6"
+  local output="${7-}"
+  local code="${8:-1}"
+  local tail
+
+  tail="$(pragma_compact_tail "$output")"
+  PRAGMA_FAILURES+=("{\"tool\":\"$(pragma_json_escape "$tool")\",\"cls\":\"$(pragma_json_escape "$cls")\",\"skip\":$skip,\"skip_cmd\":\"$(pragma_json_escape "$skip_cmd")\",\"rerun\":\"$(pragma_json_escape "$rerun")\",\"msg\":\"$(pragma_json_escape "$msg")\",\"tail\":\"$(pragma_json_escape "$tail")\",\"code\":$code}")
+  PRAGMA_EXIT_CODE=1
+}
+
+pragma_run() {
+  local tool="$1"
+  local cls="$2"
+  local skip="$3"
+  local skip_cmd="$4"
+  local rerun="$5"
+  local msg="$6"
+  shift 6
+
+  local output
+  local status
+
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+
+  if [[ $status -ne 0 ]]; then
+    if pragma_human_output_enabled && [[ -n "$output" ]]; then
+      printf '%s\n' "$output" >&2
+    fi
+    pragma_add_failure "$tool" "$cls" "$skip" "$skip_cmd" "$rerun" "$msg" "$output" "$status"
+    return "$status"
+  fi
+
+  return 0
+}
+
+pragma_emit_failures() {
+  local failures='['
+  local i
+  for ((i = 0; i < ${#PRAGMA_FAILURES[@]}; i++)); do
+    if ((i > 0)); then
+      failures+=','
+    fi
+    failures+="${PRAGMA_FAILURES[i]}"
+  done
+  failures+=']'
+
+  printf '{"v":1,"hook":"%s","step":"%s","fails":%s,"code":%s}\n' \
+    "$(pragma_json_escape "$PRAGMA_HOOK")" \
+    "$(pragma_json_escape "$PRAGMA_STEP")" \
+    "$failures" \
+    "$PRAGMA_EXIT_CODE"
+}
 
 # Record a failure without immediately exiting (for parallel-style checks).
 record_failure() {
@@ -146,5 +291,8 @@ record_failure() {
 
 # Exit with the accumulated code.
 exit_with_status() {
+  if [[ $PRAGMA_EXIT_CODE -ne 0 ]] && ! pragma_human_output_enabled; then
+    pragma_emit_failures
+  fi
   exit "${PRAGMA_EXIT_CODE}"
 }

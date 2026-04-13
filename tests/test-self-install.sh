@@ -122,7 +122,7 @@ EOF
 output="$(cd "$tmp_dir" && bash "$repo_copy/install.sh" --agent "$repo_copy" 2>&1)"
 
 assert_contains "Self-install keeps repo-local config" "Self-install detected; keeping repo-local lefthook.yml" "$output"
-assert_contains "Tool detection uses target repo" "Detected languages: markdown shell toml yaml" "$output"
+assert_contains "Tool detection uses target repo" "Detected languages: json markdown shell toml yaml" "$output"
 assert_not_contains "Caller cwd does not leak into detection" "Detected languages: go" "$output"
 
 if cmp -s "$tmp_dir/original-lefthook.yml" "$repo_copy/lefthook.yml"; then
@@ -150,6 +150,7 @@ target_output="$(bash "$repo_copy/install.sh" --agent "$target_repo" 2>&1)"
 assert_contains "Generated install completes" "Pragma is configured for $target_repo" "$target_output"
 assert_file_contains "Generated config rewrites format path" "\"$repo_copy/lib/format.sh\" {staged_files}" "$target_repo/lefthook.yml"
 assert_file_contains "Generated config rewrites lint path" "\"$repo_copy/lib/lint.sh\" {staged_files}" "$target_repo/lefthook.yml"
+assert_file_contains "Generated config rewrites secrets path" "\"$repo_copy/lib/secrets.sh\"" "$target_repo/lefthook.yml"
 assert_file_contains "Generated config rewrites test path" "\"$repo_copy/lib/test.sh\"" "$target_repo/lefthook.yml"
 assert_file_contains "Generated config keeps docker lint glob" "dockerfile,Dockerfile" "$target_repo/lefthook.yml"
 assert_file_not_contains "Generated config avoids repo-local script paths" "./lib/" "$target_repo/lefthook.yml"
