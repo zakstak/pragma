@@ -10,13 +10,16 @@ and push.
 
 Powered by [lefthook](https://github.com/evilmartians/lefthook).
 
-## Quick Start
+## Install
 
 ```bash
 # Clone pragma
 git clone https://github.com/zakstak/pragma.git ~/.pragma
 
-# Bootstrap into any repo
+# Bootstrap into the current git repo
+(cd /path/to/your-repo && ~/.pragma/install.sh)
+
+# Or bootstrap a specific git repo by path
 ~/.pragma/install.sh /path/to/your-repo
 
 # Or for CI/agent environments (non-interactive)
@@ -25,6 +28,17 @@ git clone https://github.com/zakstak/pragma.git ~/.pragma
 # Dogfood pragma on this repo itself
 ./install.sh --agent .
 ```
+
+Bootstrap expects the target to already be a Git repository.
+
+`install.sh` also needs `lefthook` to be available before it can install the
+hooks. If `lefthook` is not already on your `PATH`, either:
+
+- install it yourself first (for example `brew install lefthook`,
+  `go install github.com/evilmartians/lefthook@latest`, or
+  `nix-env -iA nixpkgs.lefthook`), or
+- run `install.sh --agent ...` on a machine with `go` or `nix-env` available so
+  Pragma can install `lefthook` for you.
 
 ## What It Does
 
@@ -127,19 +141,27 @@ rm lefthook.yml
 
 ## Installing Missing Tools
 
-Pragma downloads pre-built binaries from GitHub Releases — no Go, Rust, or
-compilation required:
+After bootstrap, Pragma detects the languages in the target repo and installs
+any missing formatter/linter/test dependencies it needs.
+
+Most tools are downloaded as pre-built binaries from GitHub Releases — no Go,
+Rust, or compilation required:
 
 ```bash
 ~/.pragma/tools/install-tools.sh         # interactive
 ~/.pragma/tools/install-tools.sh --agent  # auto-install
 ```
 
-Binaries are placed in `pragma/bin/` and automatically added to PATH by the
-hooks.
+Binaries are placed in `~/.pragma/bin/` (or `<your-clone>/bin/`) and
+automatically added to PATH by the hooks.
 
-Tools that can't be downloaded as static binaries (prettier, eslint, yamllint)
-use npm/pip.
+Some tools still rely on package managers:
+
+- `prettier` and `eslint` use `npm` or `bun`
+- `yamllint` uses `pip`, `pip3`, `pipx`, `uv`, or `python3`
+
+Binary downloads require `curl`, and archive extraction may also need `tar`,
+`gunzip`, or `unzip` depending on the tool.
 
 ## Repo Structure
 
