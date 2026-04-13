@@ -46,6 +46,14 @@ golangci_default_config_path() {
   return 1
 }
 
+golangci_uses_pragma_default_config() {
+  local config_path="$1"
+  local default_path
+
+  default_path="$(golangci_default_config_path)" || return 1
+  [[ "$config_path" -ef "$default_path" ]]
+}
+
 lint_go() {
   local -a files=("$@")
   local -a go_files=()
@@ -58,7 +66,11 @@ lint_go() {
     local config_path
 
     if config_path="$(golangci_repo_config_path)"; then
-      golangci_args+=(--config "$config_path")
+      if golangci_uses_pragma_default_config "$config_path" && ! golangci_is_v2; then
+        log_warn "Detected golangci-lint v1; skipping Pragma's bundled v2 config"
+      else
+        golangci_args+=(--config "$config_path")
+      fi
     elif config_path="$(golangci_default_config_path)"; then
       if golangci_is_v2; then
         golangci_args+=(--config "$config_path")

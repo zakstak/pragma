@@ -106,6 +106,28 @@ assert_contains "Go lint does not autofix" "--fix=false" "$go_args"
 go_v1_args="$(<"$tmp_dir/golangci.args")"
 assert_not_contains "Go lint skips bundled config for golangci-lint v1" "--config $PRAGMA_DIR/.golangci.yml" "$go_v1_args"
 
+ln -s "$PRAGMA_DIR/.golangci.yml" "$repo_dir/.golangci.yml"
+
+(
+  cd "$repo_dir"
+  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v1.64.8" \
+    bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
+)
+
+self_v1_args="$(<"$tmp_dir/golangci.args")"
+assert_not_contains "Repo symlink to pragma config is skipped for golangci-lint v1" "--config .golangci.yml" "$self_v1_args"
+
+(
+  cd "$repo_dir"
+  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v2.3.0" \
+    bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
+)
+
+self_v2_args="$(<"$tmp_dir/golangci.args")"
+assert_contains "Repo symlink to pragma config is used for golangci-lint v2" "--config .golangci.yml" "$self_v2_args"
+
+rm "$repo_dir/.golangci.yml"
+
 cat >"$repo_dir/.golangci.toml" <<'EOF'
 [linters]
 default = "none"
