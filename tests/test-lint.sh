@@ -186,6 +186,31 @@ nest_go_args="$(<"$tmp_dir/golangci.args")"
 assert_contains "Nested Go module lint runs from module root" "$repo_dir/tools/internal/goimports" "$nested_go_pwd"
 assert_contains "Nested Go module lint uses repo-relative config path" "--config ../../../.golangci.json" "$nest_go_args"
 
+mkdir -p "$repo_dir/vendor/example"
+cat >"$repo_dir/vendor/example/lib.go" <<'EOF'
+package example
+
+func Answer() int {
+    return 42
+}
+EOF
+
+rm -f "$tmp_dir/golangci.args" "$tmp_dir/golangci.pwd"
+
+(
+  cd "$repo_dir"
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
+    bash "$PRAGMA_DIR/lib/lint.sh" vendor/example/lib.go >/dev/null 2>&1
+)
+
+if [[ ! -f "$tmp_dir/golangci.args" ]]; then
+  printf 'PASS: %s\n' "Vendored Go files are skipped"
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL: %s — expected golangci-lint to be skipped for vendored files\n' "Vendored Go files are skipped"
+  FAIL=$((FAIL + 1))
+fi
+
 (
   cd "$repo_dir"
   PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \

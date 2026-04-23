@@ -120,13 +120,26 @@ repo_relative_path_from_dir() {
 lint_go() {
   local -a files=("$@")
   local -a go_files=()
+  local -a lintable_go_files=()
   local -a module_roots=()
   local repo_root
+  local file
   local module_root
   local existing_root
   local seen_root
   local effective_config_path
   filter_by_ext go_files go -- "${files[@]}"
+  [[ ${#go_files[@]} -eq 0 ]] && return 0
+
+  for file in "${go_files[@]}"; do
+    case "$file" in
+      vendor/* | */vendor/*) continue ;;
+    esac
+
+    lintable_go_files+=("$file")
+  done
+
+  go_files=("${lintable_go_files[@]}")
   [[ ${#go_files[@]} -eq 0 ]] && return 0
 
   repo_root="$(pwd)"
