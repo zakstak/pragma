@@ -58,6 +58,21 @@ has_tool() {
   command -v "$1" &>/dev/null
 }
 
+pragma_prepend_path() {
+  local candidate
+
+  for candidate in "$@"; do
+    [[ -d "$candidate" ]] || continue
+
+    case ":$PATH:" in
+      *":$candidate:"*) ;;
+      *) PATH="$candidate:$PATH" ;;
+    esac
+  done
+
+  export PATH
+}
+
 # Require a tool or print a warning and return 1.
 require_tool() {
   local tool="$1"
@@ -121,8 +136,11 @@ has_ext() {
 
 is_dockerfile_path() {
   local basename="${1##*/}"
+  local basename_lower
 
-  case "${basename,,}" in
+  basename_lower="$(printf '%s' "$basename" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+
+  case "$basename_lower" in
     dockerfile | dockerfile.* | *.dockerfile) return 0 ;;
   esac
 
@@ -132,8 +150,12 @@ is_dockerfile_path() {
 filter_by_ext() {
   local output_var="$1"
   shift
-  local -n output_ref="$output_var"
   local exts=()
+
+  if [[ ! "$output_var" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    printf 'filter_by_ext: invalid output variable name: %s\n' "$output_var" >&2
+    return 1
+  fi
 
   while [[ $# -gt 0 ]] && [[ "$1" != "--" ]]; do
     exts+=("$1")
@@ -144,12 +166,12 @@ filter_by_ext() {
     shift
   fi
 
-  output_ref=()
+  eval "$output_var=()"
 
   local file
   for file in "$@"; do
     if has_ext "$file" "${exts[@]}"; then
-      output_ref+=("$file")
+      eval "$output_var+=(\"\$file\")"
     fi
   done
 }
@@ -162,6 +184,14 @@ pragma_dir() {
   dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   echo "$dir"
 }
+
+if [[ "${PRAGMA_SKIP_INTERNAL_BIN_PATH:-0}" != "1" && "${PRAGMA_RUNNING_IN_DOCKER:-0}" != "1" ]]; then
+  pragma_prepend_path "$(pragma_dir)/bin"
+
+  if [[ -n "${PRAGMA_DOCKER_BIN_DIR:-}" ]]; then
+    pragma_prepend_path "$PRAGMA_DOCKER_BIN_DIR"
+  fi
+fi
 
 PRAGMA_HOOK="${PRAGMA_HOOK:-unknown}"
 PRAGMA_STEP="${PRAGMA_STEP:-unknown}"
