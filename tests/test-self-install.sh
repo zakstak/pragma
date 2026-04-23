@@ -9,6 +9,14 @@ FAIL=0
 CAPTURED_OUTPUT=''
 CAPTURED_STATUS=0
 
+copy_tree() {
+  local source_dir="$1"
+  local target_dir="$2"
+
+  mkdir -p "$target_dir"
+  cp -R "$source_dir/." "$target_dir"
+}
+
 assert_contains() {
   local label="$1"
   local expected="$2"
@@ -104,7 +112,8 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 repo_copy="$tmp_dir/pragma-self"
-cp -a "$PRAGMA_DIR/." "$repo_copy"
+copy_tree "$PRAGMA_DIR" "$repo_copy"
+rm -rf "${repo_copy:?}/bin"
 cp "$repo_copy/lefthook.yml" "$tmp_dir/original-lefthook.yml"
 
 space_file="$repo_copy/space file.sh"
@@ -120,9 +129,10 @@ go 1.22.0
 EOF
 
 output="$(cd "$tmp_dir" && bash "$repo_copy/install.sh" --agent "$repo_copy" 2>&1)"
+escaped_repo_copy="$(printf '%q' "$repo_copy")"
 
 assert_contains "Self-install keeps repo-local config" "Self-install detected; keeping repo-local lefthook.yml" "$output"
-assert_contains "Tool detection uses target repo" "Detected languages: json markdown shell toml yaml" "$output"
+assert_contains "Tool detection uses target repo" "Detected languages: docker json markdown shell toml yaml" "$output"
 assert_not_contains "Caller cwd does not leak into detection" "Detected languages: go" "$output"
 
 if cmp -s "$tmp_dir/original-lefthook.yml" "$repo_copy/lefthook.yml"; then
@@ -141,6 +151,48 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+stub_docker_bin="$tmp_dir/stub-docker-bin"
+mkdir -p "$stub_docker_bin"
+cat >"$stub_docker_bin/docker" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "$stub_docker_bin/docker"
+
+docker_self_repo="$tmp_dir/pragma-self-docker"
+copy_tree "$PRAGMA_DIR" "$docker_self_repo"
+rm -rf "${docker_self_repo:?}/bin"
+cp "$docker_self_repo/lefthook.yml" "$tmp_dir/original-docker-lefthook.yml"
+
+docker_self_output="$(cd "$tmp_dir" && PATH="$stub_docker_bin:$PATH" PRAGMA_DOCKER_IMAGE="pragma-tools:test" bash "$docker_self_repo/install.sh" --agent --docker-tools "$docker_self_repo" 2>&1)"
+escaped_docker_self_repo="$(printf '%q' "$docker_self_repo")"
+escaped_docker_bin_dir="$(printf '%q' "$docker_self_repo/bin/docker")"
+
+assert_contains "Docker self-install updates repo-local config" "Self-install detected; updating repo-local lefthook.yml for Docker-backed tools" "$docker_self_output"
+assert_file_contains "Docker self-install scopes wrapper dir in repo-local config" "PRAGMA_DOCKER_BIN_DIR=$escaped_docker_bin_dir ./lib/format.sh {staged_files}" "$docker_self_repo/lefthook.yml"
+assert_file_contains "Docker self-install keeps relative format path" "./lib/format.sh {staged_files}" "$docker_self_repo/lefthook.yml"
+assert_file_not_contains "Docker self-install avoids absolute format path" "$escaped_docker_self_repo/lib/format.sh" "$docker_self_repo/lefthook.yml"
+
+if cmp -s "$tmp_dir/original-docker-lefthook.yml" "$docker_self_repo/lefthook.yml"; then
+  printf 'FAIL: Docker self-install should update repo-local lefthook.yml\n'
+  FAIL=$((FAIL + 1))
+else
+  printf 'PASS: Docker self-install updates repo-local lefthook.yml\n'
+  PASS=$((PASS + 1))
+fi
+
+docker_revert_output="$(cd "$tmp_dir" && bash "$docker_self_repo/install.sh" --agent "$docker_self_repo" 2>&1)"
+assert_contains "Native self-install restores tracked repo-local config" "Self-install detected; restoring repo-local lefthook.yml from tracked template" "$docker_revert_output"
+assert_file_not_contains "Native self-install removes docker wrapper prefix" "PRAGMA_DOCKER_BIN_DIR=" "$docker_self_repo/lefthook.yml"
+
+if cmp -s "$tmp_dir/original-docker-lefthook.yml" "$docker_self_repo/lefthook.yml"; then
+  printf 'PASS: Native self-install restores original repo-local lefthook.yml\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL: Native self-install did not restore original repo-local lefthook.yml\n'
+  FAIL=$((FAIL + 1))
+fi
+
 target_repo="$tmp_dir/target repo"
 mkdir -p "$target_repo"
 git init -q "$target_repo"
@@ -148,10 +200,10 @@ git init -q "$target_repo"
 target_output="$(bash "$repo_copy/install.sh" --agent "$target_repo" 2>&1)"
 
 assert_contains "Generated install completes" "Pragma is configured for $target_repo" "$target_output"
-assert_file_contains "Generated config rewrites format path" "\"$repo_copy/lib/format.sh\" {staged_files}" "$target_repo/lefthook.yml"
-assert_file_contains "Generated config rewrites lint path" "\"$repo_copy/lib/lint.sh\" {staged_files}" "$target_repo/lefthook.yml"
-assert_file_contains "Generated config rewrites secrets path" "\"$repo_copy/lib/secrets.sh\"" "$target_repo/lefthook.yml"
-assert_file_contains "Generated config rewrites test path" "\"$repo_copy/lib/test.sh\"" "$target_repo/lefthook.yml"
+assert_file_contains "Generated config rewrites format path" "$escaped_repo_copy/lib/format.sh {staged_files}" "$target_repo/lefthook.yml"
+assert_file_contains "Generated config rewrites lint path" "$escaped_repo_copy/lib/lint.sh {staged_files}" "$target_repo/lefthook.yml"
+assert_file_contains "Generated config rewrites secrets path" "$escaped_repo_copy/lib/secrets.sh" "$target_repo/lefthook.yml"
+assert_file_contains "Generated config rewrites test path" "$escaped_repo_copy/lib/test.sh" "$target_repo/lefthook.yml"
 assert_file_contains "Generated config keeps docker lint glob" "dockerfile,Dockerfile" "$target_repo/lefthook.yml"
 assert_file_not_contains "Generated config avoids repo-local script paths" "./lib/" "$target_repo/lefthook.yml"
 
@@ -161,7 +213,8 @@ worktree_output="$(bash "$repo_copy/install.sh" --agent "$worktree_dir" 2>&1)"
 assert_contains "Worktree bootstrap succeeds" "Pragma is configured for $worktree_dir" "$worktree_output"
 
 spaced_pragma_dir="$tmp_dir/pragma copy spaced"
-cp -a "$PRAGMA_DIR/." "$spaced_pragma_dir"
+copy_tree "$PRAGMA_DIR" "$spaced_pragma_dir"
+rm -rf "${spaced_pragma_dir:?}/bin"
 
 spaced_target_repo="$tmp_dir/generated target"
 mkdir -p "$spaced_target_repo"
@@ -174,8 +227,9 @@ exit 0
 EOF
 
 spaced_output="$(bash "$spaced_pragma_dir/install.sh" --agent "$spaced_target_repo" 2>&1)"
+escaped_spaced_pragma_dir="$(printf '%q' "$spaced_pragma_dir")"
 assert_contains "Spaced pragma install completes" "Pragma is configured for $spaced_target_repo" "$spaced_output"
-assert_file_contains "Generated config quotes spaced format path" "\"$spaced_pragma_dir/lib/format.sh\" {staged_files}" "$spaced_target_repo/lefthook.yml"
+assert_file_contains "Generated config quotes spaced format path" "$escaped_spaced_pragma_dir/lib/format.sh {staged_files}" "$spaced_target_repo/lefthook.yml"
 
 if (cd "$spaced_target_repo" && lefthook run pre-commit --file "generated spaced.sh" --no-tty >/dev/null 2>&1); then
   printf 'PASS: generated hooks run from spaced pragma path\n'

@@ -110,7 +110,7 @@ exit 2
 EOF
 chmod +x "$bin_dir/prettier"
 
-capture_command_result env PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
 assert_status "Format failure exits non-zero" 1 "$CAPTURED_STATUS"
 assert_single_line "Format failure stays single-line" "$CAPTURED_OUTPUT"
 assert_contains "Format failure emits pre-commit hook" '"hook":"pre-commit"' "$CAPTURED_OUTPUT"
@@ -126,7 +126,7 @@ exit 2
 EOF
 chmod +x "$bin_dir/prettier"
 
-capture_command_result env PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
 assert_status "GPT format failure with ANSI exits non-zero" 1 "$CAPTURED_STATUS"
 assert_single_line "GPT format failure with ANSI stays single-line" "$CAPTURED_OUTPUT"
 assert_not_contains "GPT format failure strips escape byte" $'\033' "$CAPTURED_OUTPUT"
@@ -141,7 +141,7 @@ exit 2
 EOF
 chmod +x "$bin_dir/prettier"
 
-capture_command_result env PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
 assert_status "GPT long-line failure exits non-zero" 1 "$CAPTURED_STATUS"
 assert_single_line "GPT long-line failure stays single-line" "$CAPTURED_OUTPUT"
 assert_not_contains "GPT long-line failure trims leading marker" 'BEGIN' "$CAPTURED_OUTPUT"
@@ -154,7 +154,7 @@ exit 2
 EOF
 chmod +x "$bin_dir/prettier"
 
-capture_command_result env PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=human bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=human bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
 assert_status "Human format failure exits non-zero" 1 "$CAPTURED_STATUS"
 assert_contains "Human format failure replays tool output" 'SyntaxError: unexpected token' "$CAPTURED_OUTPUT"
 assert_not_contains "Human format failure does not emit JSON envelope" '"fails":' "$CAPTURED_OUTPUT"
@@ -166,7 +166,7 @@ exit 0
 EOF
 chmod +x "$bin_dir/prettier"
 
-capture_command_result env PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" index.js"
 assert_status "Format success exits zero" 0 "$CAPTURED_STATUS"
 assert_empty "Format success stays silent" "$CAPTURED_OUTPUT"
 
@@ -197,7 +197,7 @@ pub fn extra() -> u32 {
 EOF
 git -C "$format_repo" add index.js src/lib.rs src/extra.rs
 
-capture_command_result env PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" src/lib.rs"
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" src/lib.rs"
 assert_status "Rust fallback success exits zero" 0 "$CAPTURED_STATUS"
 assert_empty "Rust fallback success stays silent" "$CAPTURED_OUTPUT"
 
@@ -209,7 +209,7 @@ exit 0
 EOF
 chmod +x "$bin_dir/cargo"
 
-capture_command_result env PATH="$bin_dir:$PATH" TEST_EXTRA_RUST="$format_repo/src/extra.rs" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" src/lib.rs"
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_EXTRA_RUST="$format_repo/src/extra.rs" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" src/lib.rs"
 assert_status "Rust fallback touching extra files exits non-zero" 1 "$CAPTURED_STATUS"
 assert_single_line "Rust fallback extra-file failure stays single-line" "$CAPTURED_OUTPUT"
 assert_contains "Rust fallback extra-file failure uses cargo tool" '"tool":"cargo"' "$CAPTURED_OUTPUT"
@@ -224,7 +224,7 @@ EOF
 git -C "$format_repo" add src/extra.rs
 printf '// pre-existing dirty change\n' >>"$format_repo/src/extra.rs"
 
-capture_command_result env PATH="$bin_dir:$PATH" TEST_EXTRA_RUST="$format_repo/src/extra.rs" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" src/lib.rs"
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_EXTRA_RUST="$format_repo/src/extra.rs" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" src/lib.rs"
 assert_status "Rust fallback touching pre-dirty files exits non-zero" 1 "$CAPTURED_STATUS"
 assert_single_line "Rust fallback pre-dirty failure stays single-line" "$CAPTURED_OUTPUT"
 assert_contains "Rust fallback pre-dirty failure reports extra file" 'src/extra.rs' "$CAPTURED_OUTPUT"
@@ -258,7 +258,7 @@ exit 1
 EOF
 chmod +x "$bin_dir/npm"
 
-capture_command_result env PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$test_repo\" && \"$PRAGMA_DIR/lib/test.sh\""
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$test_repo\" && \"$PRAGMA_DIR/lib/test.sh\""
 assert_status "Test failure exits non-zero" 1 "$CAPTURED_STATUS"
 assert_single_line "Test failure stays single-line" "$CAPTURED_OUTPUT"
 assert_contains "Test failure emits pre-push hook" '"hook":"pre-push"' "$CAPTURED_OUTPUT"
@@ -266,7 +266,7 @@ assert_contains "Test failure emits test step" '"step":"test"' "$CAPTURED_OUTPUT
 assert_contains "Test failure includes skip command" '"skip_cmd":"PRAGMA_SKIP_TESTS=1 git push"' "$CAPTURED_OUTPUT"
 assert_contains "Test failure includes npm tool" '"tool":"npm"' "$CAPTURED_OUTPUT"
 
-capture_command_result env PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt PRAGMA_SKIP_TESTS=1 bash -c "cd \"$test_repo\" && \"$PRAGMA_DIR/lib/test.sh\""
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt PRAGMA_SKIP_TESTS=1 bash -c "cd \"$test_repo\" && \"$PRAGMA_DIR/lib/test.sh\""
 assert_status "Test skip exits zero" 0 "$CAPTURED_STATUS"
 assert_empty "Test skip stays silent" "$CAPTURED_OUTPUT"
 
@@ -281,7 +281,7 @@ exit 7
 EOF
 chmod +x "$bin_dir/gitleaks"
 
-capture_command_result env PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$secrets_repo\" && \"$PRAGMA_DIR/lib/secrets.sh\""
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$secrets_repo\" && \"$PRAGMA_DIR/lib/secrets.sh\""
 assert_status "Secret scan failure exits non-zero" 1 "$CAPTURED_STATUS"
 assert_single_line "Secret scan failure stays single-line" "$CAPTURED_OUTPUT"
 assert_contains "Secret scan emits secrets step" '"step":"secrets"' "$CAPTURED_OUTPUT"

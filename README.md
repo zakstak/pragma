@@ -25,20 +25,64 @@ git clone https://github.com/zakstak/pragma.git ~/.pragma
 # Or for CI/agent environments (non-interactive)
 ~/.pragma/install.sh --agent /path/to/your-repo
 
+# Or use the Docker tooling image instead of host-installed tools
+~/.pragma/install.sh --agent --docker-tools /path/to/your-repo
+
+# Dogfood pragma on this repo itself with Docker-backed tools
+./install.sh --agent --docker-tools .
+
 # Dogfood pragma on this repo itself
 ./install.sh --agent .
 ```
 
 Bootstrap expects the target to already be a Git repository.
 
-`install.sh` also needs `lefthook` to be available before it can install the
-hooks. If `lefthook` is not already on your `PATH`, either:
+## Docker Tooling Mode
 
-- install it yourself first (for example `brew install lefthook`,
-  `go install github.com/evilmartians/lefthook@latest`, or
-  `nix-env -iA nixpkgs.lefthook`), or
-- run `install.sh --agent ...` on a machine with `go` or `nix-env` available so
-  Pragma can install `lefthook` for you.
+If you want Pragma to run against a prebuilt Docker toolchain instead of host
+formatter/linter/test installs, build the tooling image once and bootstrap with
+`--docker-tools`:
+
+```bash
+docker build -t pragma-tools:local ~/.pragma
+~/.pragma/install.sh --agent --docker-tools /path/to/your-repo
+```
+
+Pragma's Docker wrappers follow the common `docker run --user uid:gid` pattern
+used by tools like Composer and golangci-lint:
+
+- bind-mount the target repo at `/workspace`
+- run container processes as your host UID/GID
+- keep container `HOME` and cache paths under `/tmp` inside the container
+- scope Docker wrappers to Docker-enabled repos instead of globally changing all
+  repos
+- never `chown` the mounted repo
+
+That means formatted files stay owned by the host user instead of becoming
+root-owned after a hook run.
+
+You can override the image tag with `PRAGMA_DOCKER_IMAGE`, for example:
+
+```bash
+PRAGMA_DOCKER_IMAGE=ghcr.io/your-org/pragma-tools:latest git commit
+```
+
+To switch an already-bootstrapped normal repo back to native host tools, rerun
+bootstrap without `--docker-tools`:
+
+```bash
+~/.pragma/install.sh --agent /path/to/your-repo
+```
+
+In native mode, `install.sh` still needs `lefthook` to finish bootstrap. If it
+is not already on your `PATH`, Pragma first tries its own pinned installer and
+falls back to `nix-env` if available. You can also install `lefthook` yourself
+first (for example `brew install lefthook` or `nix-env -iA nixpkgs.lefthook`).
+
+For self-installs, Docker mode updates the repo-local `lefthook.yml` in place to
+inject the repo-scoped `PRAGMA_DOCKER_BIN_DIR=...` prefix while keeping the
+existing relative `./lib/...` commands. Native self-installs continue to keep
+the checked-in `lefthook.yml` unchanged.
 
 ## What It Does
 
@@ -115,10 +159,11 @@ No configuration needed — it figures out what to run.
 
 ## Bootstrap Modes
 
-| Mode            | Flag        | Behavior                                  |
-| --------------- | ----------- | ----------------------------------------- |
-| **Interactive** | _(default)_ | Colored output, prompts for missing tools |
-| **Agent**       | `--agent`   | Silent unless errors, auto-installs tools |
+| Mode            | Flag             | Behavior                                                 |
+| --------------- | ---------------- | -------------------------------------------------------- |
+| **Interactive** | _(default)_      | Colored output, prompts for missing tools                |
+| **Agent**       | `--agent`        | Silent unless errors, auto-installs tools                |
+| **Docker**      | `--docker-tools` | Use Docker-backed tool wrappers instead of host installs |
 
 ## Skipping Hooks
 
@@ -150,15 +195,23 @@ Rust, or compilation required:
 ```bash
 ~/.pragma/tools/install-tools.sh         # interactive
 ~/.pragma/tools/install-tools.sh --agent  # auto-install
+~/.pragma/tools/install-tools.sh --docker --agent  # install Docker-backed wrappers
 ```
 
 Binaries are placed in `~/.pragma/bin/` (or `<your-clone>/bin/`) and
 automatically added to PATH by the hooks.
 
+In Docker mode those binaries are lightweight wrappers that call
+`tools/docker-run.sh`, which in turn runs the requested tool in the configured
+tooling image as your host UID/GID. Docker-backed wrappers live under
+`bin/docker/` so native installs and Docker installs do not stomp on each other.
+
 Some tools still rely on package managers:
 
-- `prettier` and `eslint` use `npm` or `bun`
-- `yamllint` uses `pip`, `pip3`, `pipx`, `uv`, or `python3`
+- `prettier` and `eslint` install from Pragma's committed `package-lock.json`
+  via `npm ci`
+- `ruff` and `yamllint` install from Pragma's committed hashed requirements via
+  a repo-local Python venv
 
 Binary downloads require `curl`, and archive extraction may also need `tar`,
 `gunzip`, or `unzip` depending on the tool.
@@ -168,6 +221,7 @@ Binary downloads require `curl`, and archive extraction may also need `tar`,
 ```
 pragma/
 ├── install.sh           # Bootstrap entrypoint
+├── Dockerfile           # Optional tooling image build
 ├── lefthook.yml         # Repo-local config for pragma itself
 ├── lib/
 │   ├── common.sh        # Utilities (colors, logging, tool checks)
@@ -176,6 +230,7 @@ pragma/
 │   ├── lint.sh          # Linter dispatch
 │   └── test.sh          # Test runner dispatch
 ├── tools/
+│   ├── docker-run.sh    # Runs tools inside the Docker image
 │   └── install-tools.sh # Auto-install missing tools
 └── .gitleaks.toml       # Default gitleaks config
 ```

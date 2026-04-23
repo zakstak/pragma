@@ -68,16 +68,22 @@ detect_from_files() {
 
 # ─── Detection from repo markers (full repo scan) ────────────────────────────
 
+repo_has_match_within_depth() {
+  find . \
+    \( -path './.git' -o -path './node_modules' -o -path './.venv' -o -path './*/*/*/*' \) -prune -o \
+    "$@" -print -quit 2>/dev/null | grep -q .
+}
+
 detect_from_repo() {
   local langs=()
 
   # Go
-  if [[ -f "go.mod" ]] || find . -maxdepth 3 -name '*.go' -print -quit 2>/dev/null | grep -q .; then
+  if [[ -f "go.mod" ]] || repo_has_match_within_depth -name '*.go'; then
     langs+=("go")
   fi
 
   # Rust
-  if [[ -f "Cargo.toml" ]] || find . -maxdepth 3 -name '*.rs' -print -quit 2>/dev/null | grep -q .; then
+  if [[ -f "Cargo.toml" ]] || repo_has_match_within_depth -name '*.rs'; then
     langs+=("rust")
   fi
 
@@ -89,42 +95,42 @@ detect_from_repo() {
   fi
 
   # HTML
-  if find . -maxdepth 3 -name '*.html' -print -quit 2>/dev/null | grep -q .; then
+  if repo_has_match_within_depth -name '*.html'; then
     langs+=("html")
   fi
 
   # YAML
-  if find . -maxdepth 3 \( -name '*.yml' -o -name '*.yaml' \) -not -path './.git/*' -print -quit 2>/dev/null | grep -q .; then
+  if repo_has_match_within_depth \( -name '*.yml' -o -name '*.yaml' \); then
     langs+=("yaml")
   fi
 
   # Docker
-  if find . -maxdepth 3 \( -name 'Dockerfile' -o -name 'Dockerfile.*' -o -name '*.dockerfile' \) -print -quit 2>/dev/null | grep -q .; then
+  if repo_has_match_within_depth \( -name 'Dockerfile' -o -name 'Dockerfile.*' -o -name '*.dockerfile' \); then
     langs+=("docker")
   fi
 
   # Shell
-  if find . -maxdepth 3 -name '*.sh' -print -quit 2>/dev/null | grep -q .; then
+  if repo_has_match_within_depth -name '*.sh'; then
     langs+=("shell")
   fi
 
   # Markdown
-  if find . -maxdepth 3 -name '*.md' -print -quit 2>/dev/null | grep -q .; then
+  if repo_has_match_within_depth -name '*.md'; then
     langs+=("markdown")
   fi
 
   # TOML
-  if find . -maxdepth 3 -name '*.toml' -not -name 'Cargo.toml' -print -quit 2>/dev/null | grep -q .; then
+  if repo_has_match_within_depth -name '*.toml' -not -name 'Cargo.toml'; then
     langs+=("toml")
   fi
 
   # JSON
-  if find . -maxdepth 3 -name '*.json' -not -path '*/node_modules/*' -print -quit 2>/dev/null | grep -q .; then
+  if repo_has_match_within_depth -name '*.json' -not -path '*/node_modules/*'; then
     langs+=("json")
   fi
 
   # Python
-  if [[ -f "pyproject.toml" ]] || [[ -f "requirements.txt" ]] || find . -maxdepth 3 -name '*.py' -print -quit 2>/dev/null | grep -q .; then
+  if [[ -f "pyproject.toml" ]] || [[ -f "requirements.txt" ]] || repo_has_match_within_depth -name '*.py'; then
     langs+=("python")
   fi
 

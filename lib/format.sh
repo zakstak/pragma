@@ -23,6 +23,57 @@ path_in_list() {
   return 1
 }
 
+indexed_map_name_is_valid() {
+  [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]
+}
+
+indexed_map_set() {
+  local keys_var="$1"
+  local values_var="$2"
+  local key="$3"
+  local value="$4"
+
+  indexed_map_name_is_valid "$keys_var" || return 1
+  indexed_map_name_is_valid "$values_var" || return 1
+
+  eval "$keys_var+=(\"\$key\")"
+  eval "$values_var+=(\"\$value\")"
+}
+
+indexed_map_get() {
+  local keys_var="$1"
+  local values_var="$2"
+  local key="$3"
+  local output_var="$4"
+  local -a keys=()
+  local -a values=()
+  local keys_decl
+  local values_decl
+  local i
+
+  indexed_map_name_is_valid "$keys_var" || return 1
+  indexed_map_name_is_valid "$values_var" || return 1
+  indexed_map_name_is_valid "$output_var" || return 1
+
+  keys_decl="$(declare -p "$keys_var" 2>/dev/null)" || return 1
+  values_decl="$(declare -p "$values_var" 2>/dev/null)" || return 1
+
+  keys_decl="${keys_decl/#declare -a ${keys_var}=/declare -a keys=}"
+  values_decl="${values_decl/#declare -a ${values_var}=/declare -a values=}"
+
+  eval "$keys_decl"
+  eval "$values_decl"
+
+  for ((i = 0; i < ${#keys[@]}; i++)); do
+    if [[ "${keys[i]}" == "$key" ]]; then
+      printf -v "$output_var" '%s' "${values[i]}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 # ─── Per-language formatters ──────────────────────────────────────────────────
 
 format_go() {
@@ -50,9 +101,15 @@ format_rust() {
   local -a files=("$@")
   local -a rs_files=()
   local -a cargo_extra_files=()
-  local -A rust_file_hashes_before=()
-  local -A rust_file_hashes_after=()
+  local -a rust_file_paths_before=()
+  # shellcheck disable=SC2034 # used indirectly via indexed_map_* helpers
+  local -a rust_file_hashes_before=()
+  local -a rust_file_paths_after=()
+  # shellcheck disable=SC2034 # used indirectly via indexed_map_* helpers
+  local -a rust_file_hashes_after=()
   local dirty_file
+  local before_hash
+  local after_hash
   local file_hash
   local rustfmt_output=""
   local rustfmt_status=0
@@ -75,7 +132,7 @@ format_rust() {
 
           [[ -f "$dirty_file" ]] || continue
           file_hash="$(git hash-object --no-filters "$dirty_file")"
-          rust_file_hashes_before["$dirty_file"]="$file_hash"
+          indexed_map_set rust_file_paths_before rust_file_hashes_before "$dirty_file" "$file_hash"
         done < <(git ls-files -z --cached --others --exclude-standard -- '*.rs')
 
         pragma_run "cargo" "fmt" 0 "" "$FORMAT_RERUN" "rust formatting failed" cargo fmt || return 1
@@ -87,22 +144,24 @@ format_rust() {
 
           [[ -f "$dirty_file" ]] || continue
           file_hash="$(git hash-object --no-filters "$dirty_file")"
-          rust_file_hashes_after["$dirty_file"]="$file_hash"
+          indexed_map_set rust_file_paths_after rust_file_hashes_after "$dirty_file" "$file_hash"
         done < <(git ls-files -z --cached --others --exclude-standard -- '*.rs')
 
-        for dirty_file in "${!rust_file_hashes_after[@]}"; do
-          if [[ -z ${rust_file_hashes_before["$dirty_file"]+x} ]]; then
+        for dirty_file in "${rust_file_paths_after[@]}"; do
+          if ! indexed_map_get rust_file_paths_before rust_file_hashes_before "$dirty_file" before_hash; then
             cargo_extra_files+=("$dirty_file")
             continue
           fi
 
-          if [[ "${rust_file_hashes_before["$dirty_file"]}" != "${rust_file_hashes_after["$dirty_file"]}" ]]; then
+          indexed_map_get rust_file_paths_after rust_file_hashes_after "$dirty_file" after_hash || continue
+
+          if [[ "$before_hash" != "$after_hash" ]]; then
             cargo_extra_files+=("$dirty_file")
           fi
         done
 
-        for dirty_file in "${!rust_file_hashes_before[@]}"; do
-          if [[ -z ${rust_file_hashes_after["$dirty_file"]+x} ]]; then
+        for dirty_file in "${rust_file_paths_before[@]}"; do
+          if ! indexed_map_get rust_file_paths_after rust_file_hashes_after "$dirty_file" after_hash; then
             cargo_extra_files+=("$dirty_file")
           fi
         done

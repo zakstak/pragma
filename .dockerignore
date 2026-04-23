@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+*.crt
+*.key
+*.pem
+*.p12
+*.pfx
+*.secret
+bin
+target
+node_modules
+.npm-packages/node_modules
+.venv
+*.log
