@@ -77,10 +77,17 @@ RUN set -eux; \
     esac; \
     tmpdir="$(mktemp -d)"; \
     cd "$tmpdir"; \
+    extract_checksum_entry() { \
+      local asset_name="$1"; \
+      local checksums_file="$2"; \
+      local output_file="$3"; \
+      awk -v asset="$asset_name" '$2 == asset || $2 == "*" asset { print; exit }' "$checksums_file" >"$output_file"; \
+      [ -s "$output_file" ]; \
+    }; \
     golangci_asset="golangci-lint-${GOLANGCI_LINT_VERSION#v}-linux-${golangci_arch}.tar.gz"; \
     curl -fsSL -o "$golangci_asset" "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/${golangci_asset}"; \
     curl -fsSL -o golangci-checksums.txt "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION#v}-checksums.txt"; \
-    grep "  $golangci_asset$" golangci-checksums.txt > golangci.sha256; \
+    extract_checksum_entry "$golangci_asset" golangci-checksums.txt golangci.sha256; \
     sha256sum -c golangci.sha256; \
     mkdir golangci; \
     tar -xzf "$golangci_asset" -C golangci; \
@@ -93,7 +100,7 @@ RUN set -eux; \
     gitleaks_asset="gitleaks_${GITLEAKS_VERSION#v}_linux_${gitleaks_arch}.tar.gz"; \
     curl -fsSL -o "$gitleaks_asset" "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/${gitleaks_asset}"; \
     curl -fsSL -o gitleaks-checksums.txt "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_checksums.txt"; \
-    grep "  $gitleaks_asset$" gitleaks-checksums.txt > gitleaks.sha256; \
+    extract_checksum_entry "$gitleaks_asset" gitleaks-checksums.txt gitleaks.sha256; \
     sha256sum -c gitleaks.sha256; \
     mkdir gitleaks; \
     tar -xzf "$gitleaks_asset" -C gitleaks; \
@@ -125,7 +132,7 @@ RUN set -eux; \
     lefthook_asset="lefthook_${LEFTHOOK_VERSION#v}_Linux_${lefthook_arch}.gz"; \
     curl -fsSL -o "$lefthook_asset" "https://github.com/evilmartians/lefthook/releases/download/${LEFTHOOK_VERSION}/${lefthook_asset}"; \
     curl -fsSL -o lefthook-checksums.txt "https://github.com/evilmartians/lefthook/releases/download/${LEFTHOOK_VERSION}/lefthook_checksums.txt"; \
-    grep "  $lefthook_asset$" lefthook-checksums.txt > lefthook.sha256; \
+    extract_checksum_entry "$lefthook_asset" lefthook-checksums.txt lefthook.sha256; \
     sha256sum -c lefthook.sha256; \
     gunzip -c "$lefthook_asset" > /usr/local/bin/lefthook; \
     chmod +x /usr/local/bin/lefthook; \
