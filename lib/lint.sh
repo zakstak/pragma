@@ -70,11 +70,7 @@ go_module_root_for_file() {
     dir="$(dirname "$dir")"
   done
 
-  if [[ -f "$repo_root/go.mod" ]]; then
-    printf '%s\n' "$repo_root"
-  else
-    printf '%s\n' "$repo_root"
-  fi
+  printf '%s\n' "$repo_root"
 }
 
 run_golangci_lint_in_dir() {
