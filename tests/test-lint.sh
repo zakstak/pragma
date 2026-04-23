@@ -64,6 +64,7 @@ if [[ "$1" == "--version" ]]; then
   exit 0
 fi
 
+printf '%s\n' "$PWD" >"$TEST_CAPTURE_DIR/golangci.pwd"
 printf '%s\n' "$*" >"$TEST_CAPTURE_DIR/golangci.args"
 EOF
 chmod +x "$bin_dir/golangci-lint"
@@ -88,7 +89,7 @@ EOF
 
 (
   cd "$repo_dir"
-  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
     bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
 )
 
@@ -99,7 +100,7 @@ assert_contains "Go lint does not autofix" "--fix=false" "$go_args"
 
 (
   cd "$repo_dir"
-  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v1.64.8" \
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v1.64.8" \
     bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
 )
 
@@ -110,7 +111,7 @@ ln -s "$PRAGMA_DIR/.golangci.yml" "$repo_dir/.golangci.yml"
 
 (
   cd "$repo_dir"
-  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v1.64.8" \
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v1.64.8" \
     bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
 )
 
@@ -119,7 +120,7 @@ assert_not_contains "Repo symlink to pragma config is skipped for golangci-lint 
 
 (
   cd "$repo_dir"
-  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v2.3.0" \
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v2.3.0" \
     bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
 )
 
@@ -135,7 +136,7 @@ EOF
 
 (
   cd "$repo_dir"
-  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
     bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
 )
 
@@ -154,16 +155,38 @@ EOF
 
 (
   cd "$repo_dir"
-  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
     bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
 )
 
 go_repo_json_args="$(<"$tmp_dir/golangci.args")"
 assert_contains "Repo JSON config overrides pragma default" "--config .golangci.json" "$go_repo_json_args"
 
+mkdir -p "$repo_dir/tools/internal/goimports"
+cat >"$repo_dir/tools/internal/goimports/go.mod" <<'EOF'
+module example.com/goimports
+
+go 1.25.0
+EOF
+
+cat >"$repo_dir/tools/internal/goimports/main.go" <<'EOF'
+package main
+
+func main() {}
+EOF
+
 (
   cd "$repo_dir"
-  PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
+    bash "$PRAGMA_DIR/lib/lint.sh" tools/internal/goimports/main.go >/dev/null 2>&1
+)
+
+nested_go_pwd="$(<"$tmp_dir/golangci.pwd")"
+assert_contains "Nested Go module lint runs from module root" "$repo_dir/tools/internal/goimports" "$nested_go_pwd"
+
+(
+  cd "$repo_dir"
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
     bash "$PRAGMA_DIR/lib/lint.sh" src/lib.rs >/dev/null 2>&1
 )
 

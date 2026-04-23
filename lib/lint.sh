@@ -54,11 +54,73 @@ golangci_uses_pragma_default_config() {
   [[ "$config_path" -ef "$default_path" ]]
 }
 
+go_module_root_for_file() {
+  local file="$1"
+  local repo_root dir
+
+  repo_root="$(pwd)"
+  dir="$(cd "$(dirname "$file")" && pwd)"
+
+  while [[ "$dir" != "$repo_root" ]] && [[ "$dir" != "/" ]]; do
+    if [[ -f "$dir/go.mod" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+
+    dir="$(dirname "$dir")"
+  done
+
+  if [[ -f "$repo_root/go.mod" ]]; then
+    printf '%s\n' "$repo_root"
+  else
+    printf '%s\n' "$repo_root"
+  fi
+}
+
+run_golangci_lint_in_dir() {
+  local dir="$1"
+  shift
+
+  (
+    cd "$dir"
+    golangci-lint "$@"
+  )
+}
+
+run_go_vet_in_dir() {
+  local dir="$1"
+
+  (
+    cd "$dir"
+    go vet ./...
+  )
+}
+
 lint_go() {
   local -a files=("$@")
   local -a go_files=()
+  local -a module_roots=()
+  local module_root
+  local existing_root
+  local seen_root
   filter_by_ext go_files go -- "${files[@]}"
   [[ ${#go_files[@]} -eq 0 ]] && return 0
+
+  for file in "${go_files[@]}"; do
+    module_root="$(go_module_root_for_file "$file")"
+    seen_root=false
+
+    for existing_root in "${module_roots[@]}"; do
+      if [[ "$existing_root" == "$module_root" ]]; then
+        seen_root=true
+        break
+      fi
+    done
+
+    if ! $seen_root; then
+      module_roots+=("$module_root")
+    fi
+  done
 
   if has_tool golangci-lint; then
     log_info "Linting Go files..."
@@ -79,12 +141,16 @@ lint_go() {
       fi
     fi
 
-    pragma_run "golangci-lint" "lint" 0 "" "$LINT_RERUN" "go lint failed" golangci-lint "${golangci_args[@]}" || return 1
+    for module_root in "${module_roots[@]}"; do
+      pragma_run "golangci-lint" "lint" 0 "" "$LINT_RERUN" "go lint failed" run_golangci_lint_in_dir "$module_root" "${golangci_args[@]}" || return 1
+    done
   else
     # Fallback: go vet
     if has_tool go; then
       log_info "Linting Go files (go vet fallback)..."
-      pragma_run "go" "lint" 0 "" "$LINT_RERUN" "go vet failed" go vet ./... || return 1
+      for module_root in "${module_roots[@]}"; do
+        pragma_run "go" "lint" 0 "" "$LINT_RERUN" "go vet failed" run_go_vet_in_dir "$module_root" || return 1
+      done
     else
       log_warn "Missing tool: ${BOLD}golangci-lint${RESET} or ${BOLD}go${RESET} (go linter)"
       pragma_add_failure "golangci-lint" "tool" 0 "" "$LINT_RERUN" "missing tool: golangci-lint or go" "" 1
