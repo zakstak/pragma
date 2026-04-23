@@ -96,15 +96,40 @@ run_go_vet_in_dir() {
   )
 }
 
+repo_relative_path_from_dir() {
+  local base_dir="$1"
+  local target_path="$2"
+  local repo_root current_dir prefix
+
+  repo_root="$(pwd)"
+  current_dir="$base_dir"
+  prefix=""
+
+  if [[ "$target_path" == /* ]]; then
+    target_path="${target_path#"$repo_root"/}"
+  fi
+
+  while [[ "$current_dir" != "$repo_root" ]] && [[ "$current_dir" != "/" ]]; do
+    prefix+="../"
+    current_dir="$(dirname "$current_dir")"
+  done
+
+  printf '%s%s\n' "$prefix" "$target_path"
+}
+
 lint_go() {
   local -a files=("$@")
   local -a go_files=()
   local -a module_roots=()
+  local repo_root
   local module_root
   local existing_root
   local seen_root
+  local effective_config_path
   filter_by_ext go_files go -- "${files[@]}"
   [[ ${#go_files[@]} -eq 0 ]] && return 0
+
+  repo_root="$(pwd)"
 
   for file in "${go_files[@]}"; do
     module_root="$(go_module_root_for_file "$file")"
@@ -124,24 +149,39 @@ lint_go() {
 
   if has_tool golangci-lint; then
     log_info "Linting Go files..."
-    local -a golangci_args=(run --new-from-rev=HEAD --fix=false)
+    local -a golangci_base_args=(run --new-from-rev=HEAD --fix=false)
+    local -a golangci_args=()
     local config_path
 
     if config_path="$(golangci_repo_config_path)"; then
       if golangci_uses_pragma_default_config "$config_path" && ! golangci_is_v2; then
         log_warn "Detected golangci-lint v1; skipping Pragma's bundled v2 config"
+        config_path=""
       else
-        golangci_args+=(--config "$config_path")
+        :
       fi
     elif config_path="$(golangci_default_config_path)"; then
       if golangci_is_v2; then
-        golangci_args+=(--config "$config_path")
+        :
       else
         log_warn "Detected golangci-lint v1; skipping Pragma's bundled v2 config"
+        config_path=""
       fi
     fi
 
     for module_root in "${module_roots[@]}"; do
+      golangci_args=("${golangci_base_args[@]}")
+
+      if [[ -n "${config_path:-}" ]]; then
+        effective_config_path="$config_path"
+
+        if [[ "$module_root" != "$repo_root" ]] && [[ "$effective_config_path" != /* ]]; then
+          effective_config_path="$(repo_relative_path_from_dir "$module_root" "$effective_config_path")"
+        fi
+
+        golangci_args+=(--config "$effective_config_path")
+      fi
+
       pragma_run "golangci-lint" "lint" 0 "" "$LINT_RERUN" "go lint failed" run_golangci_lint_in_dir "$module_root" "${golangci_args[@]}" || return 1
     done
   else

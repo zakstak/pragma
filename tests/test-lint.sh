@@ -182,7 +182,9 @@ EOF
 )
 
 nested_go_pwd="$(<"$tmp_dir/golangci.pwd")"
+nest_go_args="$(<"$tmp_dir/golangci.args")"
 assert_contains "Nested Go module lint runs from module root" "$repo_dir/tools/internal/goimports" "$nested_go_pwd"
+assert_contains "Nested Go module lint uses repo-relative config path" "--config ../../../.golangci.json" "$nest_go_args"
 
 (
   cd "$repo_dir"
