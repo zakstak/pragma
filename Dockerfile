@@ -49,7 +49,7 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir --require-hash
  && rm -f /tmp/pragma-python-requirements.txt
 
 COPY tools/internal/goimports /tmp/goimports
-RUN go build -C /tmp/goimports -mod=vendor -o /usr/local/bin/goimports golang.org/x/tools/cmd/goimports \
+RUN go build -C /tmp/goimports -mod=readonly -o /usr/local/bin/goimports golang.org/x/tools/cmd/goimports \
  && rm -rf /tmp/goimports
 
 RUN set -eux; \

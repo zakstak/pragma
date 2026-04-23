@@ -493,8 +493,8 @@ install_gitleaks() {
 
 install_goimports() {
   if has_tool go; then
-    log_info "Installing goimports from vendored source..."
-    go build -C "$PRAGMA_DIR/tools/internal/goimports" -mod=vendor -o "$BIN_DIR/goimports" golang.org/x/tools/cmd/goimports
+    log_info "Installing goimports from pinned module source..."
+    go build -C "$PRAGMA_DIR/tools/internal/goimports" -mod=readonly -o "$BIN_DIR/goimports" golang.org/x/tools/cmd/goimports
   else
     log_warn "goimports requires Go — skipping"
     return 1

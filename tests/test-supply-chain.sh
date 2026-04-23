@@ -38,7 +38,7 @@ assert_not_contains() {
 assert_contains "Dockerfile pins base image digest" "@sha256:" "$PRAGMA_DIR/Dockerfile"
 assert_contains "Dockerfile uses npm ci" "npm ci --ignore-scripts --no-fund --no-audit" "$PRAGMA_DIR/Dockerfile"
 assert_contains "Dockerfile uses hashed Python requirements" "pip install --break-system-packages --no-cache-dir --require-hashes -r /tmp/pragma-python-requirements.txt" "$PRAGMA_DIR/Dockerfile"
-assert_contains "Dockerfile builds vendored goimports" "go build -C /tmp/goimports -mod=vendor -o /usr/local/bin/goimports" "$PRAGMA_DIR/Dockerfile"
+assert_contains "Dockerfile builds pinned goimports module" "go build -C /tmp/goimports -mod=readonly -o /usr/local/bin/goimports golang.org/x/tools/cmd/goimports" "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids global npm install" "npm install --global" "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids pip install without hashes" "pip install --break-system-packages --no-cache-dir \\" "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids go install" " go install " "$PRAGMA_DIR/Dockerfile"
@@ -46,7 +46,7 @@ assert_not_contains "Dockerfile avoids cargo install" "cargo install" "$PRAGMA_D
 
 assert_contains "Installer uses npm ci" "npm ci --ignore-scripts --no-fund --no-audit --prefix \"\$PRAGMA_DIR/.npm-packages\"" "$PRAGMA_DIR/tools/install-tools.sh"
 assert_contains "Installer uses hashed Python requirements" "install --quiet --require-hashes -r \"\$requirements_file\"" "$PRAGMA_DIR/tools/install-tools.sh"
-assert_contains "Installer builds vendored goimports" "go build -C \"\$PRAGMA_DIR/tools/internal/goimports\" -mod=vendor -o \"\$BIN_DIR/goimports\"" "$PRAGMA_DIR/tools/install-tools.sh"
+assert_contains "Installer builds pinned goimports module" "go build -C \"\$PRAGMA_DIR/tools/internal/goimports\" -mod=readonly -o \"\$BIN_DIR/goimports\" golang.org/x/tools/cmd/goimports" "$PRAGMA_DIR/tools/install-tools.sh"
 assert_not_contains "Installer avoids bun auto-installs" "bun install -g" "$PRAGMA_DIR/tools/install-tools.sh"
 assert_not_contains "Installer avoids pipx auto-installs" "pipx install" "$PRAGMA_DIR/tools/install-tools.sh"
 assert_not_contains "Installer avoids uv tool installs" "uv tool install" "$PRAGMA_DIR/tools/install-tools.sh"
