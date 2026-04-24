@@ -482,11 +482,6 @@ install_lefthook() {
 }
 
 install_gitleaks() {
-  if [[ -z "$OS_GITLEAKS" ]]; then
-    log_warn "gitleaks is not available for $OS — skipping"
-    return 1
-  fi
-
   local asset_name="gitleaks_${GITLEAKS_VERSION#v}_${OS_GITLEAKS}_${ARCH_GITLEAKS}.tar.gz"
   download_tarball_with_checksum \
     gitleaks \
