@@ -29,6 +29,10 @@ detect_from_files() {
     esac
 
     case "$file" in
+      *.templ) langs+=("templ") ;;
+    esac
+
+    case "$file" in
       *.html | *.htm) langs+=("html") ;;
     esac
 
@@ -66,6 +70,14 @@ detect_from_files() {
   fi
 }
 
+html_file_contains_template_syntax() {
+  local file="$1"
+
+  [[ -f "$file" ]] || return 1
+
+  grep -Eq '\{\{|\{%|\{#|#\}|%\}|\}\}' -- "$file"
+}
+
 # ─── Detection from repo markers (full repo scan) ────────────────────────────
 
 repo_has_match_within_depth() {
@@ -97,6 +109,11 @@ detect_from_repo() {
   # HTML
   if repo_has_match_within_depth -name '*.html'; then
     langs+=("html")
+  fi
+
+  # templ
+  if repo_has_match_within_depth -name '*.templ'; then
+    langs+=("templ")
   fi
 
   # YAML

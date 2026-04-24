@@ -170,6 +170,60 @@ capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH"
 assert_status "Format success exits zero" 0 "$CAPTURED_STATUS"
 assert_empty "Format success stays silent" "$CAPTURED_OUTPUT"
 
+cat >"$format_repo/template.html" <<'EOF'
+{% if user %}
+  <div>{{ user.name }}</div>
+{% endif %}
+EOF
+
+cat >"$bin_dir/prettier" <<'EOF'
+#!/usr/bin/env bash
+printf 'prettier should not run for templated html\n'
+exit 9
+EOF
+chmod +x "$bin_dir/prettier"
+
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" template.html"
+assert_status "Templated HTML skip exits zero" 0 "$CAPTURED_STATUS"
+assert_empty "Templated HTML skip stays silent in GPT mode" "$CAPTURED_OUTPUT"
+
+cat >"$format_repo/plain.html" <<'EOF'
+<div hx-get="/users" hx-trigger="click">Open</div>
+EOF
+
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" plain.html"
+assert_status "Plain HTML still uses formatter and fails" 1 "$CAPTURED_STATUS"
+assert_contains "Plain HTML formatter failure keeps html message" '"msg":"html formatting failed"' "$CAPTURED_OUTPUT"
+
+cat >"$format_repo/page.templ" <<'EOF'
+templ Page() {
+  <div>Hello</div>
+}
+EOF
+
+cat >"$bin_dir/templ" <<'EOF'
+#!/usr/bin/env bash
+printf 'templ parse error\nline 2\n'
+exit 2
+EOF
+chmod +x "$bin_dir/templ"
+
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" page.templ"
+assert_status "templ format failure exits non-zero" 1 "$CAPTURED_STATUS"
+assert_single_line "templ format failure stays single-line" "$CAPTURED_OUTPUT"
+assert_contains "templ format failure emits templ tool" '"tool":"templ"' "$CAPTURED_OUTPUT"
+assert_contains "templ format failure emits templ message" '"msg":"templ formatting failed"' "$CAPTURED_OUTPUT"
+
+cat >"$bin_dir/templ" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$bin_dir/templ"
+
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" page.templ"
+assert_status "templ format success exits zero" 0 "$CAPTURED_STATUS"
+assert_empty "templ format success stays silent" "$CAPTURED_OUTPUT"
+
 cat >"$bin_dir/rustfmt" <<'EOF'
 #!/usr/bin/env bash
 printf 'rustfmt partial-file failure\n'

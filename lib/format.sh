@@ -206,16 +206,50 @@ format_typescript() {
 format_html() {
   local -a files=("$@")
   local -a html_files=()
+  local -a plain_html_files=()
+  local -a template_html_files=()
+  local file
   filter_by_ext html_files html htm -- "${files[@]}"
   [[ ${#html_files[@]} -eq 0 ]] && return 0
 
+  for file in "${html_files[@]}"; do
+    if html_file_contains_template_syntax "$file"; then
+      template_html_files+=("$file")
+    else
+      plain_html_files+=("$file")
+    fi
+  done
+
+  if [[ ${#template_html_files[@]} -gt 0 ]]; then
+    log_skip "Skipping templated HTML files; generic HTML formatting is disabled for template syntax"
+  fi
+
+  [[ ${#plain_html_files[@]} -eq 0 ]] && return 0
+
   if has_tool prettier; then
     log_info "Formatting HTML files..."
-    pragma_run "prettier" "fmt" 0 "" "$FORMAT_RERUN" "html formatting failed" prettier --write "${html_files[@]}" || return 1
-    git add -- "${html_files[@]}"
+    pragma_run "prettier" "fmt" 0 "" "$FORMAT_RERUN" "html formatting failed" prettier --write "${plain_html_files[@]}" || return 1
+    git add -- "${plain_html_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}prettier${RESET} (html formatter)"
     pragma_add_failure "prettier" "tool" 0 "" "$FORMAT_RERUN" "missing tool: prettier" "" 1
+    return 1
+  fi
+}
+
+format_templ() {
+  local -a files=("$@")
+  local -a templ_files=()
+  filter_by_ext templ_files templ -- "${files[@]}"
+  [[ ${#templ_files[@]} -eq 0 ]] && return 0
+
+  if has_tool templ; then
+    log_info "Formatting templ files..."
+    pragma_run "templ" "fmt" 0 "" "$FORMAT_RERUN" "templ formatting failed" templ fmt "${templ_files[@]}" || return 1
+    git add -- "${templ_files[@]}"
+  else
+    log_warn "Missing tool: ${BOLD}templ${RESET} (templ formatter)"
+    pragma_add_failure "templ" "tool" 0 "" "$FORMAT_RERUN" "missing tool: templ" "" 1
     return 1
   fi
 }
@@ -330,6 +364,7 @@ FORMATTERS=(
   "go:format_go"
   "rust:format_rust"
   "typescript:format_typescript"
+  "templ:format_templ"
   "html:format_html"
   "yaml:format_yaml"
   "shell:format_shell"

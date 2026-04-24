@@ -10,6 +10,7 @@ ARG PYTEST_VERSION=9.0.3
 ARG RUFF_VERSION=0.15.11
 ARG YAMLLINT_VERSION=1.38.0
 ARG GOIMPORTS_VERSION=v0.44.0
+ARG TEMPL_VERSION=v0.3.1001
 ARG GOLANGCI_LINT_VERSION=v2.11.4
 ARG HADOLINT_VERSION=v2.14.0
 ARG GITLEAKS_VERSION=v8.30.1
@@ -51,6 +52,10 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir --require-hash
 COPY tools/internal/goimports /tmp/goimports
 RUN go build -C /tmp/goimports -mod=readonly -o /usr/local/bin/goimports golang.org/x/tools/cmd/goimports \
  && rm -rf /tmp/goimports
+
+COPY tools/internal/templ /tmp/templ
+RUN go build -C /tmp/templ -mod=readonly -o /usr/local/bin/templ github.com/a-h/templ/cmd/templ \
+ && rm -rf /tmp/templ
 
 RUN set -eux; \
     arch="$(uname -m)"; \

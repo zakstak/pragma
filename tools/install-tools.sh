@@ -57,6 +57,7 @@ DOCKER_WRAPPED_TOOLS=(
   gitleaks
   go
   goimports
+  templ
   golangci-lint
   cargo
   rustfmt
@@ -500,6 +501,16 @@ install_goimports() {
   fi
 }
 
+install_templ() {
+  if has_tool go; then
+    log_info "Installing templ via pinned module source..."
+    go build -C "$PRAGMA_DIR/tools/internal/templ" -mod=readonly -o "$BIN_DIR/templ" github.com/a-h/templ/cmd/templ
+  else
+    log_warn "templ requires Go — skipping"
+    return 1
+  fi
+}
+
 install_golangci_lint() {
   local asset_name="golangci-lint-${GOLANGCI_LINT_VERSION#v}-${OS}-${ARCH_GOLANGCI}.tar.gz"
   download_tarball_with_checksum \
@@ -715,6 +726,7 @@ tools_for_lang() {
     go) echo "goimports golangci-lint" ;;
     rust) echo "rustfmt clippy" ;;
     typescript) echo "prettier eslint" ;;
+    templ) echo "templ prettier" ;;
     html) echo "prettier" ;;
     yaml) echo "prettier yamllint" ;;
     docker) echo "hadolint" ;;

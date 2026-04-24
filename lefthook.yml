@@ -3,7 +3,7 @@ pre-commit:
   parallel: true
   commands:
     format:
-      glob: "*.{go,rs,ts,tsx,js,jsx,html,htm,yml,yaml,sh,md,toml,json,py}"
+      glob: "*.{go,rs,ts,tsx,js,jsx,html,htm,templ,yml,yaml,sh,md,toml,json,py}"
       run: >
         ./lib/format.sh {staged_files}
 

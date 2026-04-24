@@ -81,7 +81,13 @@ version = "0.1.0"
 edition = "2021"
 EOF
 
-for tool in lefthook gitleaks rustfmt goimports; do
+cat >"$repo_dir/page.templ" <<'EOF'
+templ Page() {
+  <div>Hello</div>
+}
+EOF
+
+for tool in lefthook gitleaks rustfmt goimports templ; do
   cat >"$bin_dir/$tool" <<'EOF'
 #!/bin/sh
 exit 0
@@ -130,6 +136,7 @@ present_output="$(cd "$repo_dir" && PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_d
 assert_contains "cargo clippy subcommand satisfies clippy requirement" "clippy is available" "$present_output"
 assert_not_contains "available cargo clippy does not trigger reinstall" "Adding clippy via rustup" "$present_output"
 assert_contains "golangci-lint v2 satisfies Go requirement" "golangci-lint is available" "$present_output"
+assert_contains "templ satisfies templ requirement" "templ is available" "$present_output"
 
 rm "$bin_dir/golangci-lint"
 
@@ -173,11 +180,24 @@ exit 0
 EOF
 chmod +x "$bin_dir/clippy"
 
-missing_output="$(cd "$repo_dir" && PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_CARGO_HAS_CLIPPY=0 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent 2>&1)"
+cat >"$bin_dir/go" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >"$TEST_CAPTURE_DIR/go.args"
+exit 0
+EOF
+chmod +x "$bin_dir/go"
+
+rm -f "$bin_dir/templ"
+
+missing_output="$(cd "$repo_dir" && PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_CARGO_HAS_CLIPPY=0 TEST_CAPTURE_DIR="$tmp_dir" PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent 2>&1)"
 assert_contains "standalone clippy without cargo subcommand is reported missing" "clippy is missing" "$missing_output"
 assert_contains "missing cargo clippy subcommand installs via rustup" "Adding clippy via rustup" "$missing_output"
 assert_contains "golangci-lint v1 is accepted" "golangci-lint is available" "$missing_output"
 assert_not_contains "golangci-lint v1 does not trigger reinstall" "Installed golangci-lint" "$missing_output"
+assert_contains "missing templ installs via pinned module source" "Installing templ via pinned module source..." "$missing_output"
+
+templ_go_args="$(<"$tmp_dir/go.args")"
+assert_contains "templ install builds pinned module" "build -C $PRAGMA_DIR/tools/internal/templ -mod=readonly -o $PRAGMA_DIR/bin/templ github.com/a-h/templ/cmd/templ" "$templ_go_args"
 
 unsupported_repo="$tmp_dir/pragma-unsupported"
 copy_tree "$PRAGMA_DIR" "$unsupported_repo"

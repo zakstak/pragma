@@ -175,6 +175,7 @@ docker_self_repo="$tmp_dir/pragma-self-docker"
 copy_tree "$PRAGMA_DIR" "$docker_self_repo"
 rm -rf "${docker_self_repo:?}/bin"
 cp "$docker_self_repo/lefthook.yml" "$tmp_dir/original-docker-lefthook.yml"
+git -C "$docker_self_repo" show HEAD:lefthook.yml >"$tmp_dir/tracked-docker-lefthook.yml"
 
 docker_self_output="$(cd "$tmp_dir" && PATH="$stub_docker_bin:$PATH" PRAGMA_DOCKER_IMAGE="pragma-tools:test" bash "$docker_self_repo/install.sh" --agent --docker-tools "$docker_self_repo" 2>&1)"
 escaped_docker_self_repo="$(printf '%q' "$docker_self_repo")"
@@ -197,11 +198,11 @@ docker_revert_output="$(cd "$tmp_dir" && bash "$docker_self_repo/install.sh" --a
 assert_contains "Native self-install restores tracked repo-local config" "Self-install detected; restoring repo-local lefthook.yml from tracked template" "$docker_revert_output"
 assert_file_not_contains "Native self-install removes docker wrapper prefix" "PRAGMA_DOCKER_BIN_DIR=" "$docker_self_repo/lefthook.yml"
 
-if cmp -s "$tmp_dir/original-docker-lefthook.yml" "$docker_self_repo/lefthook.yml"; then
-  printf 'PASS: Native self-install restores original repo-local lefthook.yml\n'
+if cmp -s "$tmp_dir/tracked-docker-lefthook.yml" "$docker_self_repo/lefthook.yml"; then
+  printf 'PASS: Native self-install restores tracked repo-local lefthook.yml\n'
   PASS=$((PASS + 1))
 else
-  printf 'FAIL: Native self-install did not restore original repo-local lefthook.yml\n'
+  printf 'FAIL: Native self-install did not restore tracked repo-local lefthook.yml\n'
   FAIL=$((FAIL + 1))
 fi
 

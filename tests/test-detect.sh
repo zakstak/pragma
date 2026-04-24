@@ -71,10 +71,15 @@ assert_contains "Rust files detected" "rust" "$result"
 result=$(detect_from_files src/app.ts components/Button.tsx)
 assert_contains "TypeScript files detected" "typescript" "$result"
 
+# templ
+result=$(detect_from_files views/page.templ)
+assert_contains "templ files detected" "templ" "$result"
+
 # Mixed
-result=$(detect_from_files main.go src/lib.rs index.html config.yaml Dockerfile setup.sh README.md config.toml data.json app.py)
+result=$(detect_from_files main.go src/lib.rs views/page.templ index.html config.yaml Dockerfile setup.sh README.md config.toml data.json app.py)
 assert_contains "Mixed: go" "go" "$result"
 assert_contains "Mixed: rust" "rust" "$result"
+assert_contains "Mixed: templ" "templ" "$result"
 assert_contains "Mixed: html" "html" "$result"
 assert_contains "Mixed: yaml" "yaml" "$result"
 assert_contains "Mixed: docker" "docker" "$result"
@@ -112,6 +117,32 @@ result=$(detect_from_files "dir/file with spaces.ts" "docs/README copy.md")
 assert_contains "Spaces: typescript" "typescript" "$result"
 assert_contains "Spaces: markdown" "markdown" "$result"
 
+cat >"$tmp_dir/template.html" <<'EOF'
+{% if user %}
+  <div>{{ user.name }}</div>
+{% endif %}
+EOF
+
+if html_file_contains_template_syntax "$tmp_dir/template.html"; then
+  log_success "PASS: HTML template syntax is detected"
+  PASS=$((PASS + 1))
+else
+  log_error "FAIL: HTML template syntax should be detected"
+  FAIL=$((FAIL + 1))
+fi
+
+cat >"$tmp_dir/plain.html" <<'EOF'
+<div hx-get="/users" hx-trigger="click">Open</div>
+EOF
+
+if html_file_contains_template_syntax "$tmp_dir/plain.html"; then
+  log_error "FAIL: Plain HTML with HTMX should not be treated as template syntax"
+  FAIL=$((FAIL + 1))
+else
+  log_success "PASS: Plain HTML with HTMX is not treated as template syntax"
+  PASS=$((PASS + 1))
+fi
+
 # ─── Tests for detect_from_repo ───────────────────────────────────────────────
 
 log_header "detect_from_repo (in pragma dir)"
@@ -126,6 +157,7 @@ assert_contains "Pragma repo: yaml" "yaml" "$result"
 portable_repo="$tmp_dir/portable-detect"
 mkdir -p "$portable_repo/src/level2" "$portable_repo/src/level2/level3" "$portable_repo/node_modules/pkg" "$portable_repo/frontend/node_modules/pkg" "$portable_repo/.git/info"
 touch "$portable_repo/src/level2/app.py"
+touch "$portable_repo/src/level2/view.templ"
 touch "$portable_repo/src/level2/level3/ignored.sh"
 touch "$portable_repo/node_modules/pkg/ignored.json"
 touch "$portable_repo/frontend/node_modules/pkg/nested.json"
@@ -133,6 +165,7 @@ touch "$portable_repo/.git/info/ignored.yaml"
 
 result=$(cd "$portable_repo" && detect_from_repo)
 assert_contains "Portable repo scan includes files within depth 3" "python" "$result"
+assert_contains "Portable repo scan includes templ files within depth 3" "templ" "$result"
 assert_not_contains "Portable repo scan excludes files deeper than depth 3" "shell" "$result"
 assert_not_contains "Portable repo scan excludes node_modules matches" "json" "$result"
 assert_not_contains "Portable repo scan excludes nested node_modules matches" "json" "$result"

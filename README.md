@@ -134,19 +134,20 @@ PRAGMA_OUTPUT_FORMAT=human git push
 
 ## Supported Languages
 
-| Language   | Formatter   | Linter          | Test Runner             |
-| ---------- | ----------- | --------------- | ----------------------- |
-| Go         | `goimports` | `golangci-lint` | `go test ./...`         |
-| Rust       | `rustfmt`   | `clippy`        | `cargo test`            |
-| TypeScript | `prettier`  | `eslint`        | `bun test` / `npm test` |
-| HTML       | `prettier`  | —               | —                       |
-| YAML       | `prettier`  | `yamllint`      | —                       |
-| Docker     | —           | `hadolint`      | —                       |
-| Shell      | `shfmt`     | `shellcheck`    | —                       |
-| Markdown   | `prettier`  | —               | —                       |
-| TOML       | `taplo`     | `taplo check`   | —                       |
-| JSON       | `prettier`  | —               | —                       |
-| Python     | `ruff`      | `ruff check`    | `pytest`                |
+| Language   | Formatter                    | Linter          | Test Runner             |
+| ---------- | ---------------------------- | --------------- | ----------------------- |
+| Go         | `goimports`                  | `golangci-lint` | `go test ./...`         |
+| Rust       | `rustfmt`                    | `clippy`        | `cargo test`            |
+| TypeScript | `prettier`                   | `eslint`        | `bun test` / `npm test` |
+| templ      | `templ fmt`                  | —               | —                       |
+| HTML       | `prettier` (plain HTML only) | —               | —                       |
+| YAML       | `prettier`                   | `yamllint`      | —                       |
+| Docker     | —                            | `hadolint`      | —                       |
+| Shell      | `shfmt`                      | `shellcheck`    | —                       |
+| Markdown   | `prettier`                   | —               | —                       |
+| TOML       | `taplo`                      | `taplo check`   | —                       |
+| JSON       | `prettier`                   | —               | —                       |
+| Python     | `ruff`                       | `ruff check`    | `pytest`                |
 
 All repos also get **gitleaks** secret scanning.
 
@@ -159,6 +160,23 @@ Pragma auto-detects languages by:
   `tsconfig.json`, etc.)
 
 No configuration needed — it figures out what to run.
+
+## Template HTML Safety
+
+Pragma treats **plain HTML** and **templated HTML** differently on purpose.
+
+- `.templ` files are formatted with `templ fmt`.
+- Plain `.html` / `.htm` files are formatted with `prettier`.
+- `.html` / `.htm` files that contain template delimiters like `{{ ... }}`,
+  `{% ... %}`, or `{# ... #}` are **not** sent through the generic HTML
+  formatter.
+
+That keeps Pragma from fighting Askama/Jinja-style templates where delimiter
+whitespace and block structure are part of the template language, not just HTML
+layout. For Go templ, Pragma uses the native formatter instead; `templ fmt` also
+uses Prettier for embedded `script` and `style` blocks when Prettier is
+available on `PATH`. HTMX attributes still work normally inside plain HTML
+because they are handled as regular HTML attributes.
 
 ## Bootstrap Modes
 

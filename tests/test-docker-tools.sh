@@ -101,6 +101,7 @@ assert_contains "Docker bootstrap completes" "Pragma is configured for $target_r
 assert_contains "Docker bootstrap installs wrappers" "Docker-backed tools installed to $pragma_copy/bin/docker" "$install_output"
 assert_file_exists "lefthook wrapper created" "$pragma_copy/bin/docker/lefthook"
 assert_file_exists "prettier wrapper created" "$pragma_copy/bin/docker/prettier"
+assert_file_exists "templ wrapper created" "$pragma_copy/bin/docker/templ"
 assert_file_exists "cargo wrapper created" "$pragma_copy/bin/docker/cargo"
 assert_file_not_exists "Docker wrappers do not replace native bin entries" "$pragma_copy/bin/lefthook"
 
