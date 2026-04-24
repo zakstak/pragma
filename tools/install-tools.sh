@@ -15,6 +15,22 @@ PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
 source "$PRAGMA_DIR/lib/common.sh"
 source "$PRAGMA_DIR/lib/detect.sh"
 
+UNSUPPORTED_HOST_ERROR="Unsupported host: Pragma bootstrap/install-tools are supported on macOS and Linux only."
+
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+case "$OS" in
+  linux)
+    OS_GITLEAKS="Linux"
+    ;;
+  darwin)
+    OS_GITLEAKS="Darwin"
+    ;;
+  *)
+    log_error "$UNSUPPORTED_HOST_ERROR"
+    exit 1
+    ;;
+esac
+
 AGENT_MODE=false
 DOCKER_MODE=false
 
@@ -65,19 +81,7 @@ SHFMT_VERSION="v3.13.1"
 TAPLO_VERSION="0.10.0"
 LEFTHOOK_VERSION="v2.1.6"
 
-OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
-case "$OS" in
-  linux)
-    OS_GITLEAKS="Linux"
-    ;;
-  darwin)
-    OS_GITLEAKS="Darwin"
-    ;;
-  *)
-    OS_GITLEAKS=""
-    ;;
-esac
 
 case "$ARCH" in
   x86_64)
