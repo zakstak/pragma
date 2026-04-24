@@ -37,11 +37,14 @@ git clone https://github.com/zakstak/pragma.git ~/.pragma
 
 Bootstrap expects the target to already be a Git repository.
 
+Bootstrap and tool installation are supported on macOS and Linux only. Windows
+hosts are not supported, including when using `--docker-tools`.
+
 ## Docker Tooling Mode
 
-If you want Pragma to run against a prebuilt Docker toolchain instead of host
-formatter/linter/test installs, build the tooling image once and bootstrap with
-`--docker-tools`:
+If you want Pragma to run against a prebuilt Docker toolchain on macOS or Linux
+instead of host formatter/linter/test installs, build the tooling image once and
+bootstrap with `--docker-tools`:
 
 ```bash
 docker build -t pragma-tools:local ~/.pragma

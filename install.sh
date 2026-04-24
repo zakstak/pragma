@@ -14,6 +14,16 @@ set -euo pipefail
 PRAGMA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$PRAGMA_DIR/lib/common.sh"
 
+UNSUPPORTED_HOST_ERROR="Unsupported host: Pragma bootstrap/install-tools are supported on macOS and Linux only."
+
+case "$(uname -s | tr '[:upper:]' '[:lower:]')" in
+  darwin | linux) ;;
+  *)
+    log_error "$UNSUPPORTED_HOST_ERROR"
+    exit 1
+    ;;
+esac
+
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
 AGENT_MODE=false

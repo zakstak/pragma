@@ -108,6 +108,18 @@ assert_not_contains() {
   fi
 }
 
+write_uname_stub() {
+  local stub_dir="$1"
+  local stub_value="$2"
+
+  mkdir -p "$stub_dir"
+  cat >"$stub_dir/uname" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' '$stub_value'
+EOF
+  chmod +x "$stub_dir/uname"
+}
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -236,6 +248,40 @@ if (cd "$spaced_target_repo" && lefthook run pre-commit --file "generated spaced
   PASS=$((PASS + 1))
 else
   printf 'FAIL: generated hooks failed from spaced pragma path\n'
+  FAIL=$((FAIL + 1))
+fi
+
+unsupported_repo="$tmp_dir/pragma-unsupported"
+copy_tree "$PRAGMA_DIR" "$unsupported_repo"
+rm -rf "${unsupported_repo:?}/bin"
+
+unsupported_uname_dir="$tmp_dir/unsupported-uname"
+write_uname_stub "$unsupported_uname_dir" Windows_NT
+
+capture_command_result env PATH="$unsupported_uname_dir:$PATH" bash "$unsupported_repo/install.sh" --agent "$unsupported_repo"
+unsupported_output="$CAPTURED_OUTPUT"
+
+if [[ $CAPTURED_STATUS -eq 0 ]]; then
+  printf 'FAIL: unsupported host unexpectedly succeeded\n'
+  FAIL=$((FAIL + 1))
+else
+  assert_contains "Unsupported host fails with explicit bootstrap message" "Unsupported host: Pragma bootstrap/install-tools are supported on macOS and Linux only." "$unsupported_output"
+fi
+assert_not_contains "Unsupported host stops before bootstrap header" "Pragma Setup" "$unsupported_output"
+
+if [[ ! -d "$unsupported_repo/bin" ]]; then
+  printf 'PASS: unsupported host does not create install artifacts\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL: unsupported host unexpectedly created install artifacts\n'
+  FAIL=$((FAIL + 1))
+fi
+
+if cmp -s "$tmp_dir/original-lefthook.yml" "$unsupported_repo/lefthook.yml"; then
+  printf 'PASS: unsupported host leaves lefthook.yml unchanged\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL: unsupported host changed lefthook.yml\n'
   FAIL=$((FAIL + 1))
 fi
 

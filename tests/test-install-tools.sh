@@ -7,6 +7,14 @@ PRAGMA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PASS=0
 FAIL=0
 
+copy_tree() {
+  local source_dir="$1"
+  local target_dir="$2"
+
+  mkdir -p "$target_dir"
+  cp -R "$source_dir/." "$target_dir"
+}
+
 assert_contains() {
   local label="$1"
   local expected="$2"
@@ -33,6 +41,19 @@ assert_not_contains() {
     printf 'PASS: %s\n' "$label"
     PASS=$((PASS + 1))
   fi
+}
+
+capture_command_result() {
+  local output
+  local status_code
+
+  set +e
+  output="$("$@" 2>&1)"
+  status_code=$?
+  set -e
+
+  CAPTURED_OUTPUT="$output"
+  CAPTURED_STATUS=$status_code
 }
 
 tmp_dir="$(mktemp -d)"
@@ -157,6 +178,37 @@ assert_contains "standalone clippy without cargo subcommand is reported missing"
 assert_contains "missing cargo clippy subcommand installs via rustup" "Adding clippy via rustup" "$missing_output"
 assert_contains "golangci-lint v1 is accepted" "golangci-lint is available" "$missing_output"
 assert_not_contains "golangci-lint v1 does not trigger reinstall" "Installed golangci-lint" "$missing_output"
+
+unsupported_repo="$tmp_dir/pragma-unsupported"
+copy_tree "$PRAGMA_DIR" "$unsupported_repo"
+rm -rf "${unsupported_repo:?}/bin"
+
+unsupported_runtime="$tmp_dir/unsupported-runtime"
+mkdir -p "$unsupported_runtime"
+cat >"$unsupported_runtime/uname" <<'EOF'
+#!/bin/sh
+printf '%s\n' Windows_NT
+EOF
+chmod +x "$unsupported_runtime/uname"
+
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$unsupported_runtime:$runtime_path" /bin/bash "$unsupported_repo/tools/install-tools.sh" --agent
+unsupported_output="$CAPTURED_OUTPUT"
+
+if [[ $CAPTURED_STATUS -eq 0 ]]; then
+  printf 'FAIL: unsupported host unexpectedly succeeded\n'
+  FAIL=$((FAIL + 1))
+else
+  assert_contains "unsupported host fails with explicit installer message" "Unsupported host: Pragma bootstrap/install-tools are supported on macOS and Linux only." "$unsupported_output"
+fi
+assert_not_contains "unsupported host stops before tool detection" "Detected languages:" "$unsupported_output"
+
+if [[ ! -d "$unsupported_repo/bin" ]]; then
+  printf 'PASS: unsupported host does not create tool install artifacts\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL: unsupported host unexpectedly created tool install artifacts\n'
+  FAIL=$((FAIL + 1))
+fi
 
 printf '\nPassed: %s\n' "$PASS"
 printf 'Failed: %s\n' "$FAIL"
