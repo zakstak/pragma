@@ -126,7 +126,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 repo_copy="$tmp_dir/pragma-self"
 copy_tree "$PRAGMA_DIR" "$repo_copy"
 rm -rf "${repo_copy:?}/bin"
-cp "$repo_copy/lefthook.yml" "$tmp_dir/original-lefthook.yml"
+cp "$repo_copy/prek.toml" "$tmp_dir/original-prek.toml"
 
 space_file="$repo_copy/space file.sh"
 cat >"$space_file" <<'EOF'
@@ -141,21 +141,20 @@ go 1.22.0
 EOF
 
 output="$(cd "$tmp_dir" && bash "$repo_copy/install.sh" --agent "$repo_copy" 2>&1)"
-escaped_repo_copy="$(printf '%q' "$repo_copy")"
 
-assert_contains "Self-install keeps repo-local config" "Self-install detected; keeping repo-local lefthook.yml" "$output"
+assert_contains "Self-install keeps repo-local config" "Self-install detected; keeping repo-local prek.toml" "$output"
 assert_contains "Tool detection uses target repo" "Detected languages: docker json markdown shell toml yaml" "$output"
 assert_not_contains "Caller cwd does not leak into detection" "Detected languages: go" "$output"
 
-if cmp -s "$tmp_dir/original-lefthook.yml" "$repo_copy/lefthook.yml"; then
-  printf 'PASS: lefthook.yml unchanged after self-install\n'
+if cmp -s "$tmp_dir/original-prek.toml" "$repo_copy/prek.toml"; then
+  printf 'PASS: prek.toml unchanged after self-install\n'
   PASS=$((PASS + 1))
 else
-  printf 'FAIL: lefthook.yml changed after self-install\n'
+  printf 'FAIL: prek.toml changed after self-install\n'
   FAIL=$((FAIL + 1))
 fi
 
-if (cd "$repo_copy" && lefthook run pre-commit --file install.sh --file "space file.sh" --no-tty >/dev/null 2>&1); then
+if (cd "$repo_copy" && PATH="$repo_copy/bin:$PATH" prek run --files install.sh "space file.sh" >/dev/null 2>&1); then
   printf 'PASS: pre-commit hook handles pragma and spaced files\n'
   PASS=$((PASS + 1))
 else
@@ -174,35 +173,33 @@ chmod +x "$stub_docker_bin/docker"
 docker_self_repo="$tmp_dir/pragma-self-docker"
 copy_tree "$PRAGMA_DIR" "$docker_self_repo"
 rm -rf "${docker_self_repo:?}/bin"
-cp "$docker_self_repo/lefthook.yml" "$tmp_dir/original-docker-lefthook.yml"
-git -C "$docker_self_repo" show HEAD:lefthook.yml >"$tmp_dir/tracked-docker-lefthook.yml"
+cp "$docker_self_repo/prek.toml" "$tmp_dir/original-docker-prek.toml"
+cp "$docker_self_repo/prek.toml" "$tmp_dir/tracked-docker-prek.toml"
 
 docker_self_output="$(cd "$tmp_dir" && PATH="$stub_docker_bin:$PATH" PRAGMA_DOCKER_IMAGE="pragma-tools:test" bash "$docker_self_repo/install.sh" --agent --docker-tools "$docker_self_repo" 2>&1)"
-escaped_docker_self_repo="$(printf '%q' "$docker_self_repo")"
-escaped_docker_bin_dir="$(printf '%q' "$docker_self_repo/bin/docker")"
 
-assert_contains "Docker self-install updates repo-local config" "Self-install detected; updating repo-local lefthook.yml for Docker-backed tools" "$docker_self_output"
-assert_file_contains "Docker self-install scopes wrapper dir in repo-local config" "PRAGMA_DOCKER_BIN_DIR=$escaped_docker_bin_dir ./lib/format.sh {staged_files}" "$docker_self_repo/lefthook.yml"
-assert_file_contains "Docker self-install keeps relative format path" "./lib/format.sh {staged_files}" "$docker_self_repo/lefthook.yml"
-assert_file_not_contains "Docker self-install avoids absolute format path" "$escaped_docker_self_repo/lib/format.sh" "$docker_self_repo/lefthook.yml"
+assert_contains "Docker self-install updates repo-local config" "Self-install detected; updating repo-local prek.toml for Docker-backed tools" "$docker_self_output"
+assert_file_contains "Docker self-install scopes wrapper dir in repo-local config" "PRAGMA_DOCKER_BIN_DIR = \"$docker_self_repo/bin/docker\"" "$docker_self_repo/prek.toml"
+assert_file_contains "Docker self-install keeps relative format path" "entry = \"./lib/format.sh\"" "$docker_self_repo/prek.toml"
+assert_file_not_contains "Docker self-install avoids absolute format path" "$docker_self_repo/lib/format.sh" "$docker_self_repo/prek.toml"
 
-if cmp -s "$tmp_dir/original-docker-lefthook.yml" "$docker_self_repo/lefthook.yml"; then
-  printf 'FAIL: Docker self-install should update repo-local lefthook.yml\n'
+if cmp -s "$tmp_dir/original-docker-prek.toml" "$docker_self_repo/prek.toml"; then
+  printf 'FAIL: Docker self-install should update repo-local prek.toml\n'
   FAIL=$((FAIL + 1))
 else
-  printf 'PASS: Docker self-install updates repo-local lefthook.yml\n'
+  printf 'PASS: Docker self-install updates repo-local prek.toml\n'
   PASS=$((PASS + 1))
 fi
 
 docker_revert_output="$(cd "$tmp_dir" && bash "$docker_self_repo/install.sh" --agent "$docker_self_repo" 2>&1)"
-assert_contains "Native self-install restores tracked repo-local config" "Self-install detected; restoring repo-local lefthook.yml from tracked template" "$docker_revert_output"
-assert_file_not_contains "Native self-install removes docker wrapper prefix" "PRAGMA_DOCKER_BIN_DIR=" "$docker_self_repo/lefthook.yml"
+assert_contains "Native self-install restores tracked repo-local config" "Self-install detected; restoring repo-local prek.toml from tracked template" "$docker_revert_output"
+assert_file_not_contains "Native self-install removes docker wrapper prefix" "PRAGMA_DOCKER_BIN_DIR" "$docker_self_repo/prek.toml"
 
-if cmp -s "$tmp_dir/tracked-docker-lefthook.yml" "$docker_self_repo/lefthook.yml"; then
-  printf 'PASS: Native self-install restores tracked repo-local lefthook.yml\n'
+if cmp -s "$tmp_dir/tracked-docker-prek.toml" "$docker_self_repo/prek.toml"; then
+  printf 'PASS: Native self-install restores tracked repo-local prek.toml\n'
   PASS=$((PASS + 1))
 else
-  printf 'FAIL: Native self-install did not restore tracked repo-local lefthook.yml\n'
+  printf 'FAIL: Native self-install did not restore tracked repo-local prek.toml\n'
   FAIL=$((FAIL + 1))
 fi
 
@@ -213,12 +210,14 @@ git init -q "$target_repo"
 target_output="$(bash "$repo_copy/install.sh" --agent "$target_repo" 2>&1)"
 
 assert_contains "Generated install completes" "Pragma is configured for $target_repo" "$target_output"
-assert_file_contains "Generated config rewrites format path" "$escaped_repo_copy/lib/format.sh {staged_files}" "$target_repo/lefthook.yml"
-assert_file_contains "Generated config rewrites lint path" "$escaped_repo_copy/lib/lint.sh {staged_files}" "$target_repo/lefthook.yml"
-assert_file_contains "Generated config rewrites secrets path" "$escaped_repo_copy/lib/secrets.sh" "$target_repo/lefthook.yml"
-assert_file_contains "Generated config rewrites test path" "$escaped_repo_copy/lib/test.sh" "$target_repo/lefthook.yml"
-assert_file_contains "Generated config keeps docker lint glob" "dockerfile,Dockerfile" "$target_repo/lefthook.yml"
-assert_file_not_contains "Generated config avoids repo-local script paths" "./lib/" "$target_repo/lefthook.yml"
+assert_file_contains "Generated config points format hook at repo-local wrapper" "entry = \".pragma-hooks/format.sh\"" "$target_repo/prek.toml"
+assert_file_contains "Generated config points lint hook at repo-local wrapper" "entry = \".pragma-hooks/lint.sh\"" "$target_repo/prek.toml"
+assert_file_contains "Generated config points secrets hook at repo-local wrapper" "entry = \".pragma-hooks/secrets.sh\"" "$target_repo/prek.toml"
+assert_file_contains "Generated config points test hook at repo-local wrapper" "entry = \".pragma-hooks/test.sh\"" "$target_repo/prek.toml"
+assert_file_contains "Generated config keeps docker lint regex" "[Dd]ockerfile" "$target_repo/prek.toml"
+assert_file_not_contains "Generated config avoids repo-local lib paths" "entry = \"./lib/" "$target_repo/prek.toml"
+assert_file_contains "Generated format wrapper targets pragma format script" "exec $repo_copy/lib/format.sh \"\$@\"" "$target_repo/.pragma-hooks/format.sh"
+assert_file_contains "Generated lint wrapper targets pragma lint script" "exec $repo_copy/lib/lint.sh \"\$@\"" "$target_repo/.pragma-hooks/lint.sh"
 
 worktree_dir="$tmp_dir/pragma worktree"
 git -C "$repo_copy" worktree add --detach -q "$worktree_dir" HEAD >/dev/null 2>&1
@@ -242,9 +241,10 @@ EOF
 spaced_output="$(bash "$spaced_pragma_dir/install.sh" --agent "$spaced_target_repo" 2>&1)"
 escaped_spaced_pragma_dir="$(printf '%q' "$spaced_pragma_dir")"
 assert_contains "Spaced pragma install completes" "Pragma is configured for $spaced_target_repo" "$spaced_output"
-assert_file_contains "Generated config quotes spaced format path" "$escaped_spaced_pragma_dir/lib/format.sh {staged_files}" "$spaced_target_repo/lefthook.yml"
+assert_file_contains "Generated config keeps spaced pragma path out of prek entry" "entry = \".pragma-hooks/format.sh\"" "$spaced_target_repo/prek.toml"
+assert_file_contains "Generated wrapper quotes spaced pragma path" "exec $escaped_spaced_pragma_dir/lib/format.sh \"\$@\"" "$spaced_target_repo/.pragma-hooks/format.sh"
 
-if (cd "$spaced_target_repo" && lefthook run pre-commit --file "generated spaced.sh" --no-tty >/dev/null 2>&1); then
+if (cd "$spaced_target_repo" && PATH="$spaced_pragma_dir/bin:$PATH" prek run --files "generated spaced.sh" >/dev/null 2>&1); then
   printf 'PASS: generated hooks run from spaced pragma path\n'
   PASS=$((PASS + 1))
 else
@@ -278,11 +278,11 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-if cmp -s "$tmp_dir/original-lefthook.yml" "$unsupported_repo/lefthook.yml"; then
-  printf 'PASS: unsupported host leaves lefthook.yml unchanged\n'
+if cmp -s "$tmp_dir/original-prek.toml" "$unsupported_repo/prek.toml"; then
+  printf 'PASS: unsupported host leaves prek.toml unchanged\n'
   PASS=$((PASS + 1))
 else
-  printf 'FAIL: unsupported host changed lefthook.yml\n'
+  printf 'FAIL: unsupported host changed prek.toml\n'
   FAIL=$((FAIL + 1))
 fi
 

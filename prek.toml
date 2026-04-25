@@ -1,0 +1,36 @@
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "format"
+name = "format"
+entry = "./lib/format.sh"
+language = "script"
+files = '\.(go|rs|ts|tsx|js|jsx|html|htm|templ|yml|yaml|sh|md|toml|json|py)$'
+stages = ["pre-commit"]
+
+[[repos.hooks]]
+id = "lint"
+name = "lint"
+entry = "./lib/lint.sh"
+language = "script"
+files = '(\.(go|rs|ts|tsx|js|jsx|yml|yaml|sh|toml|py)$)|((^|/)([Dd]ockerfile(\.[^/]+)?|[^/]+\.[Dd]ockerfile)$)'
+stages = ["pre-commit"]
+
+[[repos.hooks]]
+id = "gitleaks"
+name = "gitleaks"
+entry = "./lib/secrets.sh"
+language = "script"
+pass_filenames = false
+always_run = true
+stages = ["pre-commit"]
+
+[[repos.hooks]]
+id = "test"
+name = "test"
+entry = "./lib/test.sh"
+language = "script"
+pass_filenames = false
+always_run = true
+stages = ["pre-push"]

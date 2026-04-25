@@ -87,7 +87,7 @@ templ Page() {
 }
 EOF
 
-for tool in lefthook gitleaks rustfmt goimports templ; do
+for tool in prek gitleaks rustfmt goimports prettier templ; do
   cat >"$bin_dir/$tool" <<'EOF'
 #!/bin/sh
 exit 0

@@ -53,7 +53,7 @@ fi
 DOCKER_BIN_DIR="$BIN_DIR/docker"
 
 DOCKER_WRAPPED_TOOLS=(
-  lefthook
+  prek
   gitleaks
   go
   goimports
@@ -80,7 +80,6 @@ GITLEAKS_VERSION="v8.30.1"
 SHELLCHECK_VERSION="v0.11.0"
 SHFMT_VERSION="v3.13.1"
 TAPLO_VERSION="0.10.0"
-LEFTHOOK_VERSION="v2.1.6"
 
 ARCH="$(uname -m)"
 
@@ -91,7 +90,6 @@ case "$ARCH" in
     ARCH_HADOLINT="x86_64"
     ARCH_GITLEAKS="x64"
     ARCH_GOLANGCI="amd64"
-    ARCH_LEFTHOOK="x86_64"
     ;;
   aarch64 | arm64)
     ARCH_GO="arm64"
@@ -99,7 +97,6 @@ case "$ARCH" in
     ARCH_HADOLINT="arm64"
     ARCH_GITLEAKS="arm64"
     ARCH_GOLANGCI="arm64"
-    ARCH_LEFTHOOK="arm64"
     ;;
   *)
     log_error "Unsupported architecture: $ARCH"
@@ -463,23 +460,21 @@ download_zip() {
 # ─── Tool installers ─────────────────────────────────────────────────────────
 # Each function downloads a pre-built binary. No compilers needed.
 
-install_lefthook() {
-  local lefthook_os
-  case "$OS" in
-    linux) lefthook_os="Linux" ;;
-    darwin) lefthook_os="MacOS" ;;
-    *)
-      log_warn "lefthook is not available for $OS — skipping"
-      return 1
-      ;;
-  esac
-
-  local asset_name="lefthook_${LEFTHOOK_VERSION#v}_${lefthook_os}_${ARCH_LEFTHOOK}.gz"
-  download_gzip_binary_with_checksum \
-    lefthook \
-    "https://github.com/evilmartians/lefthook/releases/download/${LEFTHOOK_VERSION}/${asset_name}" \
-    "https://github.com/evilmartians/lefthook/releases/download/${LEFTHOOK_VERSION}/lefthook_checksums.txt" \
-    "$asset_name"
+install_prek() {
+  if has_tool npm; then
+    log_info "Installing prek via npm lockfile..."
+    ensure_npm_tooling_installed || return 1
+    cat >"$BIN_DIR/prek" <<'WRAPPER'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
+exec "$PRAGMA_DIR/.npm-packages/node_modules/.bin/prek" "$@"
+WRAPPER
+    chmod +x "$BIN_DIR/prek"
+  else
+    log_warn "prek requires npm — skipping"
+    return 1
+  fi
 }
 
 install_gitleaks() {
@@ -793,7 +788,7 @@ main() {
     read -r -a required_tools <<<"$PRAGMA_INSTALL_ONLY_TOOLS"
   else
     # Always need these
-    required_tools=("lefthook" "gitleaks")
+    required_tools=("prek" "gitleaks")
 
     # Detect languages and add their tools
     local langs

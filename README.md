@@ -8,7 +8,7 @@ Opinionated, language-aware git hooks for all your repos. Enforces
 **formatting**, **linting**, **tests**, and **secret scanning** on every commit
 and push.
 
-Powered by [lefthook](https://github.com/evilmartians/lefthook).
+Powered by [prek](https://github.com/j178/prek).
 
 ## Install
 
@@ -77,15 +77,14 @@ bootstrap without `--docker-tools`:
 ~/.pragma/install.sh --agent /path/to/your-repo
 ```
 
-In native mode, `install.sh` still needs `lefthook` to finish bootstrap. If it
-is not already on your `PATH`, Pragma first tries its own pinned installer and
-falls back to `nix-env` if available. You can also install `lefthook` yourself
-first (for example `brew install lefthook` or `nix-env -iA nixpkgs.lefthook`).
+In native mode, `install.sh` still needs `prek` to finish bootstrap. If it is
+not already on your `PATH`, Pragma first tries its own pinned installer. You can
+also install `prek` yourself first (for example `npm install -g @j178/prek`).
 
-For self-installs, Docker mode updates the repo-local `lefthook.yml` in place to
-inject the repo-scoped `PRAGMA_DOCKER_BIN_DIR=...` prefix while keeping the
-existing relative `./lib/...` commands. Native self-installs continue to keep
-the checked-in `lefthook.yml` unchanged.
+For self-installs, Docker mode updates the repo-local `prek.toml` in place to
+inject a repo-scoped `PRAGMA_DOCKER_BIN_DIR` hook environment while keeping the
+existing relative `./lib/...` entries. Native self-installs continue to keep the
+checked-in `prek.toml` unchanged.
 
 ## What It Does
 
@@ -201,8 +200,8 @@ PRAGMA_SKIP_TESTS=1 git push
 
 ```bash
 cd /path/to/your-repo
-lefthook uninstall
-rm lefthook.yml
+prek uninstall
+rm prek.toml
 ```
 
 ## Installing Missing Tools
@@ -243,7 +242,7 @@ Binary downloads require `curl`, and archive extraction may also need `tar`,
 pragma/
 ├── install.sh           # Bootstrap entrypoint
 ├── Dockerfile           # Optional tooling image build
-├── lefthook.yml         # Repo-local config for pragma itself
+├── prek.toml            # Repo-local prek config for pragma itself
 ├── lib/
 │   ├── common.sh        # Utilities (colors, logging, tool checks)
 │   ├── detect.sh        # Language detection

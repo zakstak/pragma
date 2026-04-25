@@ -43,7 +43,6 @@ assert_contains "Dockerfile builds pinned templ module" "go build -C /tmp/templ 
 assert_contains "Dockerfile extracts checksum entries robustly" "\$2 == asset || \$2 == \"*\" asset { print; exit }" "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids brittle golangci two-space grep" "grep \"  \$golangci_asset\$\"" "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids brittle gitleaks two-space grep" "grep \"  \$gitleaks_asset\$\"" "$PRAGMA_DIR/Dockerfile"
-assert_not_contains "Dockerfile avoids brittle lefthook two-space grep" "grep \"  \$lefthook_asset\$\"" "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids global npm install" "npm install --global" "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids pip install without hashes" "pip install --break-system-packages --no-cache-dir \\" "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids go install" " go install " "$PRAGMA_DIR/Dockerfile"

@@ -52,8 +52,8 @@ fi
 
 TARGET_REPO="$(cd "$TARGET_REPO" && pwd)"
 SELF_INSTALL=false
-LEFTHOOK_TEMPLATE="$PRAGMA_DIR/lefthook.yml"
 DOCKER_WRAPPER_BIN_DIR="$PRAGMA_DIR/bin/docker"
+HOOK_WRAPPER_DIR="$TARGET_REPO/.pragma-hooks"
 
 if [[ "$TARGET_REPO" == "$PRAGMA_DIR" ]]; then
   SELF_INSTALL=true
@@ -101,9 +101,108 @@ shell_escape_arg() {
   printf '%q' "$1"
 }
 
-render_command_prefix() {
-  if $DOCKER_TOOLS; then
-    printf 'PRAGMA_DOCKER_BIN_DIR=%s ' "$(shell_escape_arg "$DOCKER_WRAPPER_BIN_DIR")"
+toml_escape_string() {
+  local value="$1"
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  printf '%s' "$value"
+}
+
+render_entry_path() {
+  local script_path="$1"
+
+  if $SELF_INSTALL; then
+    printf './lib/%s' "$script_path"
+  else
+    printf '.pragma-hooks/%s' "$script_path"
+  fi
+}
+
+write_env_line() {
+  if $SELF_INSTALL && $DOCKER_TOOLS; then
+    printf 'env = { PRAGMA_DOCKER_BIN_DIR = "%s" }\n' "$(toml_escape_string "$DOCKER_WRAPPER_BIN_DIR")"
+  fi
+}
+
+write_canonical_template() {
+  local output_path="$1"
+
+  cat >"$output_path" <<'EOF'
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "format"
+name = "format"
+entry = "./lib/format.sh"
+language = "script"
+files = '\.(go|rs|ts|tsx|js|jsx|html|htm|templ|yml|yaml|sh|md|toml|json|py)$'
+stages = ["pre-commit"]
+
+[[repos.hooks]]
+id = "lint"
+name = "lint"
+entry = "./lib/lint.sh"
+language = "script"
+files = '(\.(go|rs|ts|tsx|js|jsx|yml|yaml|sh|toml|py)$)|((^|/)([Dd]ockerfile(\.[^/]+)?|[^/]+\.[Dd]ockerfile)$)'
+stages = ["pre-commit"]
+
+[[repos.hooks]]
+id = "gitleaks"
+name = "gitleaks"
+entry = "./lib/secrets.sh"
+language = "script"
+pass_filenames = false
+always_run = true
+stages = ["pre-commit"]
+
+[[repos.hooks]]
+id = "test"
+name = "test"
+entry = "./lib/test.sh"
+language = "script"
+pass_filenames = false
+always_run = true
+stages = ["pre-push"]
+EOF
+}
+
+write_hook_wrapper() {
+  local script_path="$1"
+  local wrapper_path="$HOOK_WRAPPER_DIR/$script_path"
+
+  mkdir -p "$HOOK_WRAPPER_DIR"
+
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'set -euo pipefail\n'
+    if $DOCKER_TOOLS; then
+      printf 'export PRAGMA_DOCKER_BIN_DIR=%s\n' "$(shell_escape_arg "$DOCKER_WRAPPER_BIN_DIR")"
+    fi
+    printf 'exec %s "$@"\n' "$(shell_escape_arg "$PRAGMA_DIR/lib/$script_path")"
+  } >"$wrapper_path"
+
+  chmod +x "$wrapper_path"
+}
+
+generate_target_wrappers() {
+  $SELF_INSTALL && return 0
+
+  write_hook_wrapper format.sh
+  write_hook_wrapper lint.sh
+  write_hook_wrapper secrets.sh
+  write_hook_wrapper test.sh
+}
+
+remove_stale_lefthook_shim() {
+  local hook_name="$1"
+  local hook_path
+
+  hook_path="$(git -C "$TARGET_REPO" rev-parse --git-path "hooks/$hook_name")"
+
+  if [[ -f "$hook_path" ]] && grep -Fq 'lefthook' "$hook_path"; then
+    rm -f "$hook_path"
+    log_info "Removed stale lefthook shim for $hook_name"
   fi
 }
 
@@ -125,39 +224,38 @@ if $DOCKER_TOOLS; then
   echo ""
 fi
 
-# ─── Step 1: Install lefthook if needed ───────────────────────────────────────
+# ─── Step 1: Install prek if needed ───────────────────────────────────────────
 
-if ! has_tool lefthook; then
-  log_warn "lefthook is not installed"
+if ! has_tool prek; then
+  log_warn "prek is not installed"
 
   if $AGENT_MODE; then
-    log_info "Installing lefthook..."
-    if (cd "$TARGET_REPO" && PRAGMA_INSTALL_ONLY_TOOLS="lefthook" "$PRAGMA_DIR/tools/install-tools.sh" --agent); then
+    log_info "Installing prek..."
+    if (cd "$TARGET_REPO" && PRAGMA_INSTALL_ONLY_TOOLS="prek" "$PRAGMA_DIR/tools/install-tools.sh" --agent); then
       :
-    elif has_tool nix-env; then
-      nix-env -iA nixpkgs.lefthook
     else
-      log_error "Cannot install lefthook automatically"
-      log_info "Install manually: https://github.com/evilmartians/lefthook/blob/master/docs/install.md"
+      log_error "Cannot install prek automatically"
+      log_info "Install manually: npm install -g @j178/prek"
       exit 1
     fi
   else
-    log_info "Install lefthook via one of:"
+    log_info "Install prek via one of:"
     echo "  $PRAGMA_DIR/tools/install-tools.sh --agent"
-    echo "  nix-env -iA nixpkgs.lefthook"
-    echo "  brew install lefthook"
+    echo "  npm install -g @j178/prek"
     echo ""
     read -rp "Attempt auto-install via Pragma's pinned installer? [Y/n] " answer
     if [[ ! "$answer" =~ ^[Nn] ]]; then
-      (cd "$TARGET_REPO" && PRAGMA_INSTALL_ONLY_TOOLS="lefthook" "$PRAGMA_DIR/tools/install-tools.sh" --agent) || {
-        log_error "Failed to install lefthook"
+      (cd "$TARGET_REPO" && PRAGMA_INSTALL_ONLY_TOOLS="prek" "$PRAGMA_DIR/tools/install-tools.sh" --agent) || {
+        log_error "Failed to install prek"
         exit 1
       }
     else
-      log_error "lefthook is required. Please install and re-run."
+      log_error "prek is required. Please install and re-run."
       exit 1
     fi
   fi
+
+  pragma_prepend_path "$PRAGMA_DIR/bin"
 
   # Ensure GOPATH/bin is in PATH so we can find the just-installed binary
   GOBIN_DIR="${GOBIN:-$(go env GOBIN 2>/dev/null)}"
@@ -165,79 +263,76 @@ if ! has_tool lefthook; then
   GOBIN_DIR="${GOBIN_DIR:-$HOME/go/bin}"
   if [[ -d "$GOBIN_DIR" ]] && [[ ":$PATH:" != *":$GOBIN_DIR:"* ]]; then
     export PATH="$GOBIN_DIR:$PATH"
-    hash -r 2>/dev/null || true
   fi
 
-  if has_tool lefthook; then
-    log_success "lefthook installed"
+  hash -r 2>/dev/null || true
+
+  if has_tool prek; then
+    log_success "prek installed"
   else
-    log_error "lefthook installation failed"
+    log_error "prek installation failed"
     exit 1
   fi
 else
-  log_success "lefthook is available ($(lefthook version 2>/dev/null || echo 'unknown version'))"
+  log_success "prek is available ($(prek --version 2>/dev/null || echo 'unknown version'))"
 fi
 
-# ─── Step 2: Generate lefthook.yml in target repo ────────────────────────────
+# ─── Step 2: Generate prek.toml in target repo ───────────────────────────────
 
-LEFTHOOK_CONFIG="$TARGET_REPO/lefthook.yml"
-
-render_config_line() {
-  local line="$1"
-  local command_prefix
-  command_prefix="$(render_command_prefix)"
-
-  if [[ "$line" == *"./lib/"* ]]; then
-    local prefix suffix script_path remainder
-    prefix="${line%%./lib/*}"
-    suffix="${line#*./lib/}"
-    script_path="${suffix%% *}"
-    remainder="${suffix#"$script_path"}"
-
-    if $SELF_INSTALL; then
-      printf '%s%s./lib/%s%s\n' "$prefix" "$command_prefix" "$script_path" "$remainder"
-    else
-      printf '%s%s%s%s\n' "$prefix" "$command_prefix" "$(shell_escape_arg "$PRAGMA_DIR/lib/$script_path")" "$remainder"
-    fi
-    return
-  fi
-
-  printf '%s\n' "$line"
-}
+PREK_CONFIG="$TARGET_REPO/prek.toml"
 
 write_self_install_template() {
   local output_path="$1"
 
-  if git -C "$TARGET_REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
-    git -C "$TARGET_REPO" show HEAD:lefthook.yml >"$output_path" 2>/dev/null; then
-    return 0
-  fi
-
-  cp "$LEFTHOOK_TEMPLATE" "$output_path"
+  write_canonical_template "$output_path"
 }
 
 generate_config() {
-  local template_source="$LEFTHOOK_TEMPLATE"
-  local temp_template=""
-
-  if $SELF_INSTALL; then
-    temp_template="$(mktemp)"
-    write_self_install_template "$temp_template"
-    template_source="$temp_template"
-  fi
-
   {
     printf '# Generated by pragma — https://github.com/zakstak/pragma\n'
     printf '# To regenerate: %s/install.sh%s %s\n\n' "$PRAGMA_DIR" "$(if $DOCKER_TOOLS; then printf ' --docker-tools'; fi)" "$TARGET_REPO"
 
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      render_config_line "$line"
-    done <"$template_source"
-  } >"$LEFTHOOK_CONFIG"
+    printf '[[repos]]\n'
+    printf 'repo = "local"\n\n'
 
-  if [[ -n "$temp_template" ]]; then
-    rm -f "$temp_template"
-  fi
+    printf '[[repos.hooks]]\n'
+    printf 'id = "format"\n'
+    printf 'name = "format"\n'
+    printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path format.sh)")"
+    printf 'language = "script"\n'
+    write_env_line
+    printf "files = '\\\\.(go|rs|ts|tsx|js|jsx|html|htm|templ|yml|yaml|sh|md|toml|json|py)$'\n"
+    printf 'stages = ["pre-commit"]\n\n'
+
+    printf '[[repos.hooks]]\n'
+    printf 'id = "lint"\n'
+    printf 'name = "lint"\n'
+    printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path lint.sh)")"
+    printf 'language = "script"\n'
+    write_env_line
+    printf "files = '(\\\\.(go|rs|ts|tsx|js|jsx|yml|yaml|sh|toml|py)$)|((^|/)([Dd]ockerfile(\\\\.[^/]+)?|[^/]+\\\\.[Dd]ockerfile)$)'\n"
+    printf 'stages = ["pre-commit"]\n\n'
+
+    printf '[[repos.hooks]]\n'
+    printf 'id = "gitleaks"\n'
+    printf 'name = "gitleaks"\n'
+    printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path secrets.sh)")"
+    printf 'language = "script"\n'
+    write_env_line
+    printf 'pass_filenames = false\n'
+    printf 'always_run = true\n'
+    printf 'stages = ["pre-commit"]\n\n'
+
+    printf '[[repos.hooks]]\n'
+    printf 'id = "test"\n'
+    printf 'name = "test"\n'
+    printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path test.sh)")"
+    printf 'language = "script"\n'
+    write_env_line
+    printf 'pass_filenames = false\n'
+    printf 'always_run = true\n'
+    printf 'stages = ["pre-push"]\n'
+  } >"$PREK_CONFIG"
 }
 
 restore_self_install_config() {
@@ -245,44 +340,43 @@ restore_self_install_config() {
 
   temp_template="$(mktemp)"
   write_self_install_template "$temp_template"
-  cp "$temp_template" "$LEFTHOOK_CONFIG"
+  cp "$temp_template" "$PREK_CONFIG"
   rm -f "$temp_template"
 }
 
-if [[ ! -f "$LEFTHOOK_TEMPLATE" ]]; then
-  log_error "Missing canonical lefthook config: $LEFTHOOK_TEMPLATE"
-  exit 1
+if ! $SELF_INSTALL; then
+  generate_target_wrappers
 fi
 
 if $SELF_INSTALL; then
-  if [[ -f "$LEFTHOOK_CONFIG" ]]; then
+  if [[ -f "$PREK_CONFIG" ]]; then
     if $DOCKER_TOOLS; then
-      log_info "Self-install detected; updating repo-local lefthook.yml for Docker-backed tools"
+      log_info "Self-install detected; updating repo-local prek.toml for Docker-backed tools"
       generate_config
-      log_success "Updated repo-local lefthook.yml at $LEFTHOOK_CONFIG"
-    elif grep -Fq 'PRAGMA_DOCKER_BIN_DIR=' "$LEFTHOOK_CONFIG"; then
-      log_info "Self-install detected; restoring repo-local lefthook.yml from tracked template"
+      log_success "Updated repo-local prek.toml at $PREK_CONFIG"
+    elif grep -Fq 'PRAGMA_DOCKER_BIN_DIR' "$PREK_CONFIG"; then
+      log_info "Self-install detected; restoring repo-local prek.toml from tracked template"
       restore_self_install_config
-      log_success "Restored repo-local lefthook.yml at $LEFTHOOK_CONFIG"
+      log_success "Restored repo-local prek.toml at $PREK_CONFIG"
     else
-      log_info "Self-install detected; keeping repo-local lefthook.yml"
-      log_success "Using repo-local lefthook.yml at $LEFTHOOK_CONFIG"
+      log_info "Self-install detected; keeping repo-local prek.toml"
+      log_success "Using repo-local prek.toml at $PREK_CONFIG"
     fi
   else
-    log_error "Self-install requires repo-local lefthook.yml at $LEFTHOOK_CONFIG"
+    log_error "Self-install requires repo-local prek.toml at $PREK_CONFIG"
     exit 1
   fi
-elif [[ -f "$LEFTHOOK_CONFIG" ]]; then
+elif [[ -f "$PREK_CONFIG" ]]; then
   if $AGENT_MODE; then
-    log_info "Overwriting existing lefthook.yml"
+    log_info "Overwriting existing prek.toml"
     generate_config
   else
-    log_warn "lefthook.yml already exists in target repo"
+    log_warn "prek.toml already exists in target repo"
     read -rp "Overwrite? [y/N] " answer
     if [[ "$answer" =~ ^[Yy] ]]; then
       generate_config
     else
-      log_info "Keeping existing lefthook.yml"
+      log_info "Keeping existing prek.toml"
     fi
   fi
 else
@@ -290,7 +384,7 @@ else
 fi
 
 if ! $SELF_INSTALL; then
-  log_success "lefthook.yml written to $LEFTHOOK_CONFIG"
+  log_success "prek.toml written to $PREK_CONFIG"
 fi
 
 # ─── Step 3: Copy gitleaks config if target doesn't have one ──────────────────
@@ -302,11 +396,15 @@ else
   log_skip "Target repo already has .gitleaks.toml"
 fi
 
-# ─── Step 4: Run lefthook install ─────────────────────────────────────────────
+# ─── Step 4: Run prek install ─────────────────────────────────────────────────
 
-log_info "Installing git hooks via lefthook..."
-(cd "$TARGET_REPO" && lefthook install) || {
-  log_error "lefthook install failed"
+remove_stale_lefthook_shim pre-commit
+remove_stale_lefthook_shim pre-push
+remove_stale_lefthook_shim prepare-commit-msg
+
+log_info "Installing git hooks via prek..."
+(cd "$TARGET_REPO" && prek install --overwrite --hook-type pre-commit --hook-type pre-push) || {
+  log_error "prek install failed"
   exit 1
 }
 log_success "Git hooks installed"
@@ -337,4 +435,4 @@ echo "  git commit --no-verify"
 echo "  git push --no-verify"
 echo ""
 log_info "To uninstall:"
-echo "  cd $TARGET_REPO && lefthook uninstall"
+echo "  cd $TARGET_REPO && prek uninstall"

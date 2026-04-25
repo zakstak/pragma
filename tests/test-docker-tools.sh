@@ -99,14 +99,15 @@ install_output="$(PATH="$stub_bin:$PATH" PRAGMA_DOCKER_IMAGE="pragma-tools:test"
 
 assert_contains "Docker bootstrap completes" "Pragma is configured for $target_repo" "$install_output"
 assert_contains "Docker bootstrap installs wrappers" "Docker-backed tools installed to $pragma_copy/bin/docker" "$install_output"
-assert_file_exists "lefthook wrapper created" "$pragma_copy/bin/docker/lefthook"
+assert_file_exists "prek wrapper created" "$pragma_copy/bin/docker/prek"
 assert_file_exists "prettier wrapper created" "$pragma_copy/bin/docker/prettier"
 assert_file_exists "templ wrapper created" "$pragma_copy/bin/docker/templ"
 assert_file_exists "cargo wrapper created" "$pragma_copy/bin/docker/cargo"
-assert_file_not_exists "Docker wrappers do not replace native bin entries" "$pragma_copy/bin/lefthook"
+assert_file_not_exists "Docker wrappers do not replace native bin entries" "$pragma_copy/bin/prek"
 
 escaped_docker_bin="$(printf '%q' "$pragma_copy/bin/docker")"
-assert_contains "Generated config scopes docker wrappers per repo" "PRAGMA_DOCKER_BIN_DIR=$escaped_docker_bin" "$(cat "$target_repo/lefthook.yml")"
+assert_contains "Generated config uses repo-local wrapper path" "entry = \".pragma-hooks/format.sh\"" "$(cat "$target_repo/prek.toml")"
+assert_contains "Generated wrapper scopes docker wrappers per repo" "export PRAGMA_DOCKER_BIN_DIR=$escaped_docker_bin" "$(cat "$target_repo/.pragma-hooks/format.sh")"
 
 mkdir -p "$pragma_copy/bin"
 cat >"$pragma_copy/bin/hadolint" <<'EOF'
@@ -119,8 +120,8 @@ resolution_output="$(PATH="/usr/bin:/bin" PRAGMA_DOCKER_BIN_DIR="$pragma_copy/bi
 assert_contains "Docker mode prefers docker wrapper over native bin" "$pragma_copy/bin/docker/hadolint" "$resolution_output"
 
 capture_contents="$(cat "$docker_capture")"
-assert_contains "lefthook install runs through docker" "lefthook" "$capture_contents"
-assert_contains "lefthook install forwards install subcommand" "install" "$capture_contents"
+assert_contains "prek install runs through docker" "prek" "$capture_contents"
+assert_contains "prek install forwards install subcommand" "install" "$capture_contents"
 assert_contains "Docker wrapper uses requested image" "pragma-tools:test" "$capture_contents"
 assert_contains "Docker wrapper preserves host uid:gid" "$(id -u):$(id -g)" "$capture_contents"
 assert_contains "Docker wrapper mounts target repo" "$target_repo:/workspace" "$capture_contents"
@@ -150,17 +151,17 @@ assert_contains "Direct wrapper forwards arguments" "Dockerfile" "$wrapper_captu
 assert_contains "Direct wrapper forwards skip-tests env" "PRAGMA_SKIP_TESTS=1" "$wrapper_capture"
 
 native_probe_output="$(cd "$target_repo" && PATH="$stub_bin:/usr/bin:/bin" bash "$pragma_copy/tools/install-tools.sh" --agent 2>&1 || true)"
-assert_contains "Native mode still sees lefthook as missing after docker install" "lefthook is missing" "$native_probe_output"
+assert_contains "Native mode still sees prek as missing after docker install" "prek is missing" "$native_probe_output"
 
-cat >"$pragma_copy/bin/lefthook" <<'EOF'
+cat >"$pragma_copy/bin/prek" <<'EOF'
 #!/bin/sh
 exit 0
 EOF
-chmod +x "$pragma_copy/bin/lefthook"
+chmod +x "$pragma_copy/bin/prek"
 
 native_restore_output="$(PATH="$stub_bin:/usr/bin:/bin" bash "$pragma_copy/install.sh" --agent "$target_repo" 2>&1)"
 assert_contains "Native restore on normal repo completes" "Pragma is configured for $target_repo" "$native_restore_output"
-assert_file_not_contains "Native restore on normal repo removes docker wrapper prefix" "PRAGMA_DOCKER_BIN_DIR=" "$target_repo/lefthook.yml"
+assert_file_not_contains "Native restore on normal repo removes docker wrapper prefix" "PRAGMA_DOCKER_BIN_DIR" "$target_repo/prek.toml"
 
 printf '\nPassed: %s\n' "$PASS"
 printf 'Failed: %s\n' "$FAIL"
