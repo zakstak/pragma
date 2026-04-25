@@ -252,6 +252,21 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+home_root="$tmp_dir/fake-home"
+mkdir -p "$home_root"
+home_pragma_dir="$home_root/.pragma"
+copy_tree "$PRAGMA_DIR" "$home_pragma_dir"
+rm -rf "${home_pragma_dir:?}/bin"
+
+home_target_repo="$tmp_dir/home target"
+mkdir -p "$home_target_repo"
+git init -q "$home_target_repo"
+
+home_output="$(HOME="$home_root" bash "$home_pragma_dir/install.sh" --agent "$home_target_repo" 2>&1)"
+assert_contains "Home pragma install completes" "Pragma is configured for $home_target_repo" "$home_output"
+assert_file_contains "Canonical home wrapper uses HOME pragma path" "exec \"\$HOME/.pragma\"/lib/format.sh \"\$@\"" "$home_target_repo/.pragma-hooks/format.sh"
+assert_file_contains "Canonical home regenerate comment uses tilde path" "# To regenerate: ~/.pragma/install.sh $home_target_repo" "$home_target_repo/prek.toml"
+
 unsupported_repo="$tmp_dir/pragma-unsupported"
 copy_tree "$PRAGMA_DIR" "$unsupported_repo"
 rm -rf "${unsupported_repo:?}/bin"
