@@ -17,12 +17,12 @@ ARG GITLEAKS_VERSION=v8.30.1
 ARG SHELLCHECK_VERSION=v0.11.0
 ARG SHFMT_VERSION=v3.13.1
 ARG TAPLO_VERSION=0.10.0
-ARG LEFTHOOK_VERSION=v2.1.6
 
 ENV CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:/usr/local/bin:$PATH
 
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     build-essential \
@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY .npm-packages/package.json .npm-packages/package-lock.json /opt/pragma-npm-tools/
 RUN npm ci --ignore-scripts --no-fund --no-audit --prefix /opt/pragma-npm-tools \
+ && ln -sf /opt/pragma-npm-tools/node_modules/.bin/prek /usr/local/bin/prek \
  && ln -sf /opt/pragma-npm-tools/node_modules/.bin/prettier /usr/local/bin/prettier \
  && ln -sf /opt/pragma-npm-tools/node_modules/.bin/eslint /usr/local/bin/eslint
 
@@ -57,6 +58,7 @@ COPY tools/internal/templ /tmp/templ
 RUN go build -C /tmp/templ -mod=readonly -o /usr/local/bin/templ github.com/a-h/templ/cmd/templ \
  && rm -rf /tmp/templ
 
+# hadolint ignore=DL3003
 RUN set -eux; \
     arch="$(uname -m)"; \
     case "$arch" in \
@@ -65,23 +67,22 @@ RUN set -eux; \
       *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
     esac; \
     tmpdir="$(mktemp -d)"; \
-    cd "$tmpdir"; \
-    curl -fsSL -o rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${rustup_target}/rustup-init"; \
-    curl -fsSL -o rustup-init.sha256 "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${rustup_target}/rustup-init.sha256"; \
-    sha256sum -c rustup-init.sha256; \
-    chmod +x rustup-init; \
-    ./rustup-init -y --profile minimal --component clippy,rustfmt; \
+    curl -fsSL -o "$tmpdir/rustup-init" "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${rustup_target}/rustup-init"; \
+    curl -fsSL -o "$tmpdir/rustup-init.sha256" "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${rustup_target}/rustup-init.sha256"; \
+    (cd "$tmpdir" && sha256sum -c rustup-init.sha256); \
+    chmod +x "$tmpdir/rustup-init"; \
+    "$tmpdir/rustup-init" -y --profile minimal --component clippy,rustfmt; \
     rm -rf "$tmpdir"
 
+# hadolint ignore=DL3003
 RUN set -eux; \
     arch="$(uname -m)"; \
     case "$arch" in \
-      x86_64) hadolint_arch="x86_64"; gitleaks_arch="x64"; golangci_arch="amd64"; lefthook_arch="x86_64"; shellcheck_arch="x86_64"; shfmt_arch="amd64"; taplo_arch="x86_64" ;; \
-      aarch64|arm64) hadolint_arch="arm64"; gitleaks_arch="arm64"; golangci_arch="arm64"; lefthook_arch="arm64"; shellcheck_arch="aarch64"; shfmt_arch="arm64"; taplo_arch="aarch64" ;; \
+      x86_64) hadolint_arch="x86_64"; gitleaks_arch="x64"; golangci_arch="amd64"; shellcheck_arch="x86_64"; shfmt_arch="amd64"; taplo_arch="x86_64" ;; \
+      aarch64|arm64) hadolint_arch="arm64"; gitleaks_arch="arm64"; golangci_arch="arm64"; shellcheck_arch="aarch64"; shfmt_arch="arm64"; taplo_arch="aarch64" ;; \
       *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
     esac; \
     tmpdir="$(mktemp -d)"; \
-    cd "$tmpdir"; \
     extract_checksum_entry() { \
       local asset_name="$1"; \
       local checksums_file="$2"; \
@@ -90,57 +91,50 @@ RUN set -eux; \
       [ -s "$output_file" ]; \
     }; \
     golangci_asset="golangci-lint-${GOLANGCI_LINT_VERSION#v}-linux-${golangci_arch}.tar.gz"; \
-    curl -fsSL -o "$golangci_asset" "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/${golangci_asset}"; \
-    curl -fsSL -o golangci-checksums.txt "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION#v}-checksums.txt"; \
-    extract_checksum_entry "$golangci_asset" golangci-checksums.txt golangci.sha256; \
-    sha256sum -c golangci.sha256; \
-    mkdir golangci; \
-    tar -xzf "$golangci_asset" -C golangci; \
-    install -m 0755 "$(find golangci -name golangci-lint -type f | head -n 1)" /usr/local/bin/golangci-lint; \
+    curl -fsSL -o "$tmpdir/$golangci_asset" "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/${golangci_asset}"; \
+    curl -fsSL -o "$tmpdir/golangci-checksums.txt" "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION#v}-checksums.txt"; \
+    extract_checksum_entry "$tmpdir/$golangci_asset" "$tmpdir/golangci-checksums.txt" "$tmpdir/golangci.sha256"; \
+    (cd "$tmpdir" && sha256sum -c golangci.sha256); \
+    mkdir "$tmpdir/golangci"; \
+    tar -xzf "$tmpdir/$golangci_asset" -C "$tmpdir/golangci"; \
+    install -m 0755 "$(find "$tmpdir/golangci" -name golangci-lint -type f | head -n 1)" /usr/local/bin/golangci-lint; \
     hadolint_asset="hadolint-linux-${hadolint_arch}"; \
-    curl -fsSL -o "$hadolint_asset" "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/${hadolint_asset}"; \
-    curl -fsSL -o hadolint.sha256 "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/${hadolint_asset}.sha256"; \
-    sha256sum -c hadolint.sha256; \
-    install -m 0755 "$hadolint_asset" /usr/local/bin/hadolint; \
+    curl -fsSL -o "$tmpdir/$hadolint_asset" "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/${hadolint_asset}"; \
+    curl -fsSL -o "$tmpdir/hadolint.sha256" "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/${hadolint_asset}.sha256"; \
+    (cd "$tmpdir" && sha256sum -c hadolint.sha256); \
+    install -m 0755 "$tmpdir/$hadolint_asset" /usr/local/bin/hadolint; \
     gitleaks_asset="gitleaks_${GITLEAKS_VERSION#v}_linux_${gitleaks_arch}.tar.gz"; \
-    curl -fsSL -o "$gitleaks_asset" "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/${gitleaks_asset}"; \
-    curl -fsSL -o gitleaks-checksums.txt "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_checksums.txt"; \
-    extract_checksum_entry "$gitleaks_asset" gitleaks-checksums.txt gitleaks.sha256; \
-    sha256sum -c gitleaks.sha256; \
-    mkdir gitleaks; \
-    tar -xzf "$gitleaks_asset" -C gitleaks; \
-    install -m 0755 "$(find gitleaks -name gitleaks -type f | head -n 1)" /usr/local/bin/gitleaks; \
+    curl -fsSL -o "$tmpdir/$gitleaks_asset" "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/${gitleaks_asset}"; \
+    curl -fsSL -o "$tmpdir/gitleaks-checksums.txt" "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_checksums.txt"; \
+    extract_checksum_entry "$tmpdir/$gitleaks_asset" "$tmpdir/gitleaks-checksums.txt" "$tmpdir/gitleaks.sha256"; \
+    (cd "$tmpdir" && sha256sum -c gitleaks.sha256); \
+    mkdir "$tmpdir/gitleaks"; \
+    tar -xzf "$tmpdir/$gitleaks_asset" -C "$tmpdir/gitleaks"; \
+    install -m 0755 "$(find "$tmpdir/gitleaks" -name gitleaks -type f | head -n 1)" /usr/local/bin/gitleaks; \
     shellcheck_asset="shellcheck-${SHELLCHECK_VERSION}.linux.${shellcheck_arch}.tar.xz"; \
-    curl -fsSL -o "$shellcheck_asset" "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${shellcheck_asset}"; \
+    curl -fsSL -o "$tmpdir/$shellcheck_asset" "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${shellcheck_asset}"; \
     case "$shellcheck_arch" in \
-      x86_64) echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  $shellcheck_asset" | sha256sum -c - ;; \
-      aarch64) echo "12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588  $shellcheck_asset" | sha256sum -c - ;; \
+      x86_64) echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  $tmpdir/$shellcheck_asset" | sha256sum -c - ;; \
+      aarch64) echo "12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588  $tmpdir/$shellcheck_asset" | sha256sum -c - ;; \
     esac; \
-    mkdir shellcheck; \
-    tar -xJf "$shellcheck_asset" -C shellcheck; \
-    install -m 0755 "$(find shellcheck -name shellcheck -type f | head -n 1)" /usr/local/bin/shellcheck; \
+    mkdir "$tmpdir/shellcheck"; \
+    tar -xJf "$tmpdir/$shellcheck_asset" -C "$tmpdir/shellcheck"; \
+    install -m 0755 "$(find "$tmpdir/shellcheck" -name shellcheck -type f | head -n 1)" /usr/local/bin/shellcheck; \
     shfmt_asset="shfmt_${SHFMT_VERSION}_linux_${shfmt_arch}"; \
-    curl -fsSL -o "$shfmt_asset" "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/${shfmt_asset}"; \
+    curl -fsSL -o "$tmpdir/$shfmt_asset" "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/${shfmt_asset}"; \
     case "$shfmt_arch" in \
-      amd64) echo "fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1  $shfmt_asset" | sha256sum -c - ;; \
-      arm64) echo "32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7  $shfmt_asset" | sha256sum -c - ;; \
+      amd64) echo "fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1  $tmpdir/$shfmt_asset" | sha256sum -c - ;; \
+      arm64) echo "32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7  $tmpdir/$shfmt_asset" | sha256sum -c - ;; \
     esac; \
-    install -m 0755 "$shfmt_asset" /usr/local/bin/shfmt; \
+    install -m 0755 "$tmpdir/$shfmt_asset" /usr/local/bin/shfmt; \
     taplo_asset="taplo-linux-${taplo_arch}.gz"; \
-    curl -fsSL -o "$taplo_asset" "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/${taplo_asset}"; \
+    curl -fsSL -o "$tmpdir/$taplo_asset" "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/${taplo_asset}"; \
     case "$taplo_arch" in \
-      x86_64) echo "8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156  $taplo_asset" | sha256sum -c - ;; \
-      aarch64) echo "033681d01eec8376c3fd38fa3703c79316f5e14bb013d859943b60a07bccdcc3  $taplo_asset" | sha256sum -c - ;; \
+      x86_64) echo "8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156  $tmpdir/$taplo_asset" | sha256sum -c - ;; \
+      aarch64) echo "033681d01eec8376c3fd38fa3703c79316f5e14bb013d859943b60a07bccdcc3  $tmpdir/$taplo_asset" | sha256sum -c - ;; \
     esac; \
-    gunzip -c "$taplo_asset" > /usr/local/bin/taplo; \
+    gunzip -c "$tmpdir/$taplo_asset" > /usr/local/bin/taplo; \
     chmod +x /usr/local/bin/taplo; \
-    lefthook_asset="lefthook_${LEFTHOOK_VERSION#v}_Linux_${lefthook_arch}.gz"; \
-    curl -fsSL -o "$lefthook_asset" "https://github.com/evilmartians/lefthook/releases/download/${LEFTHOOK_VERSION}/${lefthook_asset}"; \
-    curl -fsSL -o lefthook-checksums.txt "https://github.com/evilmartians/lefthook/releases/download/${LEFTHOOK_VERSION}/lefthook_checksums.txt"; \
-    extract_checksum_entry "$lefthook_asset" lefthook-checksums.txt lefthook.sha256; \
-    sha256sum -c lefthook.sha256; \
-    gunzip -c "$lefthook_asset" > /usr/local/bin/lefthook; \
-    chmod +x /usr/local/bin/lefthook; \
     rm -rf "$tmpdir"
 
 RUN mkdir -p /workspace && chmod 0777 /workspace
