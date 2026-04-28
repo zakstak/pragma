@@ -154,6 +154,13 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+missing_prek_repo="$tmp_dir/pragma-self-missing-prek"
+copy_tree "$PRAGMA_DIR" "$missing_prek_repo"
+rm -rf "${missing_prek_repo:?}/bin"
+rm -f "$missing_prek_repo/prek.toml"
+
+assert_command_fails_with "Self-install without repo-local prek.toml fails" "Self-install requires repo-local prek.toml" bash "$missing_prek_repo/install.sh" --agent "$missing_prek_repo"
+
 if (cd "$repo_copy" && PATH="$repo_copy/bin:$PATH" prek run --files install.sh "space file.sh" >/dev/null 2>&1); then
   printf 'PASS: pre-commit hook handles pragma and spaced files\n'
   PASS=$((PASS + 1))

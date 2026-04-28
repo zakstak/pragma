@@ -84,7 +84,9 @@ also install `prek` yourself first (for example `npm install -g @j178/prek`).
 For self-installs, Docker mode updates the repo-local `prek.toml` in place to
 inject a repo-scoped `PRAGMA_DOCKER_BIN_DIR` hook environment while keeping the
 existing relative `./lib/...` entries. Native self-installs continue to keep the
-checked-in `prek.toml` unchanged.
+checked-in `prek.toml` unchanged. Self-installs require an existing repo-local
+`prek.toml`; `install.sh` will not generate one from scratch for the Pragma repo
+itself.
 
 ## What It Does
 
