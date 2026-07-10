@@ -74,7 +74,7 @@ DOCKER_WRAPPED_TOOLS=(
   ruff
 )
 
-GOLANGCI_LINT_VERSION="v2.11.4"
+GOLANGCI_LINT_VERSION="v2.12.2"
 HADOLINT_VERSION="v2.14.0"
 GITLEAKS_VERSION="v8.30.1"
 SHELLCHECK_VERSION="v0.11.0"
@@ -191,6 +191,21 @@ ensure_npm_tooling_installed() {
   fi
 
   npm ci --ignore-scripts --no-fund --no-audit --prefix "$PRAGMA_DIR/.npm-packages"
+}
+
+node_supports_eslint() {
+  has_tool node || return 1
+
+  local version major minor patch
+  version="$(node --version 2>/dev/null)" || return 1
+  version="${version#v}"
+  IFS='.' read -r major minor patch <<<"$version"
+  [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]] || return 1
+
+  ((major > 21)) ||
+    ((major == 21 && minor >= 1)) ||
+    ((major == 20 && minor >= 9)) ||
+    ((major == 18 && minor >= 18))
 }
 
 ensure_python_tooling_installed() {
@@ -533,7 +548,7 @@ WRAPPER
 }
 
 install_eslint() {
-  if has_tool npm; then
+  if has_tool npm && node_supports_eslint; then
     log_info "Installing eslint via npm lockfile..."
     ensure_npm_tooling_installed || return 1
     cat >"$BIN_DIR/eslint" <<'WRAPPER'
@@ -544,7 +559,7 @@ exec node "$PRAGMA_DIR/.npm-packages/node_modules/.bin/eslint" "$@"
 WRAPPER
     chmod +x "$BIN_DIR/eslint"
   else
-    log_warn "eslint requires npm — skipping"
+    log_warn "eslint requires npm and Node 18.18+, 20.9+, or 21.1+ — skipping"
     return 1
   fi
 }

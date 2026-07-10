@@ -1,17 +1,17 @@
-FROM golang:1.25-bookworm@sha256:29e59af995c51a5bf63d072eca973b918e0e7af4db0e4667aa73f1b8da1a6d8c
+FROM golang:1.26.5-bookworm@sha256:18aedc16aa19b3fd7ded7245fc14b109e054d65d22ed53c355c899582bbb2113
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG RUSTUP_VERSION=1.28.2
-ARG PRETTIER_VERSION=3.8.4
+ARG RUSTUP_VERSION=1.29.0
+ARG PRETTIER_VERSION=3.9.5
 ARG ESLINT_VERSION=9.39.4
-ARG PYTEST_VERSION=9.0.3
-ARG RUFF_VERSION=0.15.11
+ARG PYTEST_VERSION=9.1.1
+ARG RUFF_VERSION=0.15.21
 ARG YAMLLINT_VERSION=1.38.0
-ARG GOIMPORTS_VERSION=v0.44.0
-ARG TEMPL_VERSION=v0.3.1001
-ARG GOLANGCI_LINT_VERSION=v2.11.4
+ARG GOIMPORTS_VERSION=v0.48.0
+ARG TEMPL_VERSION=v0.3.1020
+ARG GOLANGCI_LINT_VERSION=v2.12.2
 ARG HADOLINT_VERSION=v2.14.0
 ARG GITLEAKS_VERSION=v8.30.1
 ARG SHELLCHECK_VERSION=v0.11.0
@@ -87,7 +87,8 @@ RUN set -eux; \
       local asset_name="$1"; \
       local checksums_file="$2"; \
       local output_file="$3"; \
-      awk -v asset="$asset_name" '$2 == asset || $2 == "*" asset { print; exit }' "$checksums_file" >"$output_file"; \
+      local asset_basename="$(basename "$asset_name")"; \
+      awk -v asset="$asset_basename" '$2 == asset || $2 == "*" asset { print; exit }' "$checksums_file" >"$output_file"; \
       [ -s "$output_file" ]; \
     }; \
     golangci_asset="golangci-lint-${GOLANGCI_LINT_VERSION#v}-linux-${golangci_arch}.tar.gz"; \
