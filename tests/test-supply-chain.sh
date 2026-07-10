@@ -61,7 +61,7 @@ assert_not_contains "Installer avoids latest references" "@latest" "$PRAGMA_DIR/
 assert_contains "Host Python requirements file exists" "ruff==0.15.21" "$PRAGMA_DIR/tools/requirements/host-python.txt"
 assert_contains "Docker Python requirements file exists" "pytest==9.1.1" "$PRAGMA_DIR/tools/requirements/docker-python.txt"
 assert_contains "npm lockfile includes prettier" '"prettier": "3.9.5"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
-assert_contains "npm lockfile includes eslint" '"eslint": "10.6.0"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
+assert_contains "npm lockfile includes eslint" '"eslint": "9.39.4"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
 assert_contains "Repo ignores local venv" ".venv/" "$PRAGMA_DIR/.gitignore"
 
 printf '\nPassed: %s\n' "$PASS"

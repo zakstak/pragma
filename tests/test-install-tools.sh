@@ -64,7 +64,7 @@ bin_dir="$tmp_dir/bin"
 runtime_path="$tmp_dir/runtime-path"
 mkdir -p "$repo_dir" "$bin_dir" "$runtime_path"
 
-for tool in dirname find grep mkdir sh sort tr uname; do
+for tool in cat chmod dirname find grep mkdir sh sort tr uname; do
   ln -s "$(command -v "$tool")" "$runtime_path/$tool"
 done
 
@@ -198,6 +198,31 @@ assert_contains "missing templ installs via pinned module source" "Installing te
 
 templ_go_args="$(<"$tmp_dir/go.args")"
 assert_contains "templ install builds pinned module" "build -C $PRAGMA_DIR/tools/internal/templ -mod=readonly -o $PRAGMA_DIR/bin/templ github.com/a-h/templ/cmd/templ" "$templ_go_args"
+
+cat >"$bin_dir/npm" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "$bin_dir/npm"
+
+cat >"$bin_dir/node" <<'EOF'
+#!/bin/sh
+printf '%s\n' "${TEST_NODE_VERSION:-v18.18.0}"
+EOF
+chmod +x "$bin_dir/node"
+
+capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=eslint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v18.17.1 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
+assert_contains "unsupported Node version skips eslint install" "eslint requires npm and Node 18.18+, 20.9+, or 21.1+" "$CAPTURED_OUTPUT"
+
+capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=eslint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v18.18.0 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
+if [[ $CAPTURED_STATUS -eq 0 && -x "$PRAGMA_DIR/bin/eslint" ]]; then
+  printf 'PASS: supported Node version installs eslint wrapper\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL: supported Node version installs eslint wrapper\n'
+  FAIL=$((FAIL + 1))
+fi
+rm -f "$PRAGMA_DIR/bin/eslint"
 
 unsupported_repo="$tmp_dir/pragma-unsupported"
 copy_tree "$PRAGMA_DIR" "$unsupported_repo"

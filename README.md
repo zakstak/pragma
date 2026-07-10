@@ -231,7 +231,7 @@ tooling image as your host UID/GID. Docker-backed wrappers live under
 Some tools still rely on package managers:
 
 - `prettier` and `eslint` install from Pragma's committed `package-lock.json`
-  via `npm ci`
+  via `npm ci`; ESLint v9 requires Node 18.18+, 20.9+, or 21.1+
 - `ruff` and `yamllint` install from Pragma's committed hashed requirements via
   a repo-local Python venv
 

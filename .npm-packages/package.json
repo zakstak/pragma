@@ -3,7 +3,7 @@
   "private": true,
   "dependencies": {
     "@j178/prek": "0.4.8",
-    "eslint": "10.6.0",
+    "eslint": "9.39.4",
     "prettier": "3.9.5"
   }
 }
