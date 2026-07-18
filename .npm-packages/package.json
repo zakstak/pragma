@@ -2,7 +2,7 @@
   "name": "pragma-npm-tools",
   "private": true,
   "dependencies": {
-    "@j178/prek": "0.4.8",
+    "@j178/prek": "0.4.10",
     "eslint": "9.39.4",
     "prettier": "3.9.5"
   }
