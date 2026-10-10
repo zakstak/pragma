@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Assertions match literal shell snippets.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -161,11 +162,12 @@ rm -f "$missing_prek_repo/prek.toml"
 
 assert_command_fails_with "Self-install without repo-local prek.toml fails" "Self-install requires repo-local prek.toml" bash "$missing_prek_repo/install.sh" --agent "$missing_prek_repo"
 
-if (cd "$repo_copy" && PATH="$repo_copy/bin:$PATH" prek run --files install.sh "space file.sh" >/dev/null 2>&1); then
+git -C "$repo_copy" add -- install.sh "space file.sh"
+if hook_output="$(cd "$repo_copy" && PATH="$repo_copy/bin:$PATH" prek run --files install.sh "space file.sh" 2>&1)"; then
   printf 'PASS: pre-commit hook handles pragma and spaced files\n'
   PASS=$((PASS + 1))
 else
-  printf 'FAIL: pre-commit hook failed on pragma or spaced files\n'
+  printf 'FAIL: pre-commit hook failed on pragma or spaced files\n%s\n' "$hook_output"
   FAIL=$((FAIL + 1))
 fi
 
@@ -186,7 +188,7 @@ cp "$docker_self_repo/prek.toml" "$tmp_dir/tracked-docker-prek.toml"
 docker_self_output="$(cd "$tmp_dir" && PATH="$stub_docker_bin:$PATH" PRAGMA_DOCKER_IMAGE="pragma-tools:test" bash "$docker_self_repo/install.sh" --agent --docker-tools "$docker_self_repo" 2>&1)"
 
 assert_contains "Docker self-install updates repo-local config" "Self-install detected; updating repo-local prek.toml for Docker-backed tools" "$docker_self_output"
-assert_file_contains "Docker self-install scopes wrapper dir in repo-local config" "PRAGMA_DOCKER_BIN_DIR = \"$docker_self_repo/bin/docker\"" "$docker_self_repo/prek.toml"
+assert_file_contains "Docker self-install scopes tooling mode" 'PRAGMA_TOOL_MODE = "docker"' "$docker_self_repo/prek.toml"
 assert_file_contains "Docker self-install keeps relative format path" "entry = \"./lib/format.sh\"" "$docker_self_repo/prek.toml"
 assert_file_not_contains "Docker self-install avoids absolute format path" "$docker_self_repo/lib/format.sh" "$docker_self_repo/prek.toml"
 
@@ -200,7 +202,7 @@ fi
 
 docker_revert_output="$(cd "$tmp_dir" && bash "$docker_self_repo/install.sh" --agent "$docker_self_repo" 2>&1)"
 assert_contains "Native self-install restores tracked repo-local config" "Self-install detected; restoring repo-local prek.toml from tracked template" "$docker_revert_output"
-assert_file_not_contains "Native self-install removes docker wrapper prefix" "PRAGMA_DOCKER_BIN_DIR" "$docker_self_repo/prek.toml"
+assert_file_not_contains "Native self-install removes docker wrapper prefix" "PRAGMA_TOOL_MODE" "$docker_self_repo/prek.toml"
 
 if cmp -s "$tmp_dir/tracked-docker-prek.toml" "$docker_self_repo/prek.toml"; then
   printf 'PASS: Native self-install restores tracked repo-local prek.toml\n'
@@ -223,8 +225,8 @@ assert_file_contains "Generated config points secrets hook at repo-local wrapper
 assert_file_contains "Generated config points test hook at repo-local wrapper" "entry = \".pragma-hooks/test.sh\"" "$target_repo/prek.toml"
 assert_file_contains "Generated config keeps docker lint regex" "[Dd]ockerfile" "$target_repo/prek.toml"
 assert_file_not_contains "Generated config avoids repo-local lib paths" "entry = \"./lib/" "$target_repo/prek.toml"
-assert_file_contains "Generated format wrapper targets pragma format script" "exec $repo_copy/lib/format.sh \"\$@\"" "$target_repo/.pragma-hooks/format.sh"
-assert_file_contains "Generated lint wrapper targets pragma lint script" "exec $repo_copy/lib/lint.sh \"\$@\"" "$target_repo/.pragma-hooks/lint.sh"
+assert_file_contains "Generated format wrapper resolves runtime location" 'exec "$PRAGMA_HOME/lib/format.sh" "$@"' "$target_repo/.pragma-hooks/format.sh"
+assert_file_contains "Generated lint wrapper resolves runtime location" 'exec "$PRAGMA_HOME/lib/lint.sh" "$@"' "$target_repo/.pragma-hooks/lint.sh"
 
 worktree_dir="$tmp_dir/pragma worktree"
 git -C "$repo_copy" worktree add --detach -q "$worktree_dir" HEAD >/dev/null 2>&1
@@ -246,10 +248,9 @@ exit 0
 EOF
 
 spaced_output="$(bash "$spaced_pragma_dir/install.sh" --agent "$spaced_target_repo" 2>&1)"
-escaped_spaced_pragma_dir="$(printf '%q' "$spaced_pragma_dir")"
 assert_contains "Spaced pragma install completes" "Pragma is configured for $spaced_target_repo" "$spaced_output"
 assert_file_contains "Generated config keeps spaced pragma path out of prek entry" "entry = \".pragma-hooks/format.sh\"" "$spaced_target_repo/prek.toml"
-assert_file_contains "Generated wrapper quotes spaced pragma path" "exec $escaped_spaced_pragma_dir/lib/format.sh \"\$@\"" "$spaced_target_repo/.pragma-hooks/format.sh"
+assert_file_not_contains "Generated wrapper excludes machine paths" "$spaced_pragma_dir" "$spaced_target_repo/.pragma-hooks/format.sh"
 
 if (cd "$spaced_target_repo" && PATH="$spaced_pragma_dir/bin:$PATH" prek run --files "generated spaced.sh" >/dev/null 2>&1); then
   printf 'PASS: generated hooks run from spaced pragma path\n'
@@ -271,8 +272,8 @@ git init -q "$home_target_repo"
 
 home_output="$(HOME="$home_root" bash "$home_pragma_dir/install.sh" --agent "$home_target_repo" 2>&1)"
 assert_contains "Home pragma install completes" "Pragma is configured for $home_target_repo" "$home_output"
-assert_file_contains "Canonical home wrapper uses HOME pragma path" "exec \"\$HOME/.pragma\"/lib/format.sh \"\$@\"" "$home_target_repo/.pragma-hooks/format.sh"
-assert_file_contains "Canonical home regenerate comment uses tilde path" "# To regenerate: ~/.pragma/install.sh $home_target_repo" "$home_target_repo/prek.toml"
+assert_file_contains "Canonical home wrapper falls back to HOME" 'PRAGMA_HOME="${PRAGMA_HOME:-$HOME/.pragma}"' "$home_target_repo/.pragma-hooks/format.sh"
+assert_file_contains "Canonical home regenerate comment uses tilde path" "# To regenerate: ~/.pragma/install.sh <target-repo>" "$home_target_repo/prek.toml"
 
 unsupported_repo="$tmp_dir/pragma-unsupported"
 copy_tree "$PRAGMA_DIR" "$unsupported_repo"

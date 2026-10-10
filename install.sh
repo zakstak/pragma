@@ -69,27 +69,6 @@ fi
 # Add pragma/bin to PATH if it exists (installed binaries or Docker wrappers)
 pragma_prepend_path "$PRAGMA_DIR/bin"
 
-# Add GOPATH/bin to PATH so go-installed tools are found in native mode.
-if ! $DOCKER_TOOLS; then
-  _gobin="${GOBIN:-}"
-
-  if [[ -z "$_gobin" ]] && has_tool go; then
-    _gobin="$(go env GOBIN 2>/dev/null || true)"
-
-    if [[ -z "$_gobin" ]]; then
-      _gopath="$(go env GOPATH 2>/dev/null || true)"
-      _gobin="${_gopath:+$_gopath/bin}"
-      unset _gopath
-    fi
-  fi
-
-  _gobin="${_gobin:-$HOME/go/bin}"
-  if [[ -d "$_gobin" ]] && [[ ":$PATH:" != *":$_gobin:"* ]]; then
-    pragma_prepend_path "$_gobin"
-  fi
-  unset _gobin
-fi
-
 log_header "Pragma Setup"
 log_info "Pragma dir: ${BOLD}$PRAGMA_DIR${RESET}"
 log_info "Target repo:   ${BOLD}$TARGET_REPO${RESET}"
@@ -97,29 +76,10 @@ log_info "Mode:          ${BOLD}$(if $AGENT_MODE; then echo "agent (non-interact
 log_info "Tooling:       ${BOLD}$(if $DOCKER_TOOLS; then echo "docker image"; else echo "host install"; fi)${RESET}"
 echo ""
 
-shell_escape_arg() {
-  printf '%q' "$1"
-}
-
-render_runtime_pragma_dir() {
-  if [[ "$PRAGMA_DIR" == "$HOME/.pragma" ]]; then
-    printf '"%s/.pragma"' "\$HOME"
-  else
-    shell_escape_arg "$PRAGMA_DIR"
-  fi
-}
-
 render_regenerate_command() {
-  local install_root="$PRAGMA_DIR"
-
-  if [[ "$PRAGMA_DIR" == "$HOME/.pragma" ]]; then
-    install_root="${PRAGMA_DIR/#$HOME/\~}"
-  fi
-
-  printf '%s/install.sh%s %s' \
-    "$install_root" \
-    "$(if $DOCKER_TOOLS; then printf ' --docker-tools'; fi)" \
-    "$TARGET_REPO"
+  # shellcheck disable=SC2088 # This is a comment for the generated config.
+  printf '~/.pragma/install.sh%s <target-repo>' \
+    "$(if $DOCKER_TOOLS; then printf ' --docker-tools'; fi)"
 }
 
 toml_escape_string() {
@@ -141,7 +101,7 @@ render_entry_path() {
 
 write_env_line() {
   if $SELF_INSTALL && $DOCKER_TOOLS; then
-    printf 'env = { PRAGMA_DOCKER_BIN_DIR = "%s" }\n' "$(toml_escape_string "$DOCKER_WRAPPER_BIN_DIR")"
+    printf 'env = { PRAGMA_TOOL_MODE = "docker" }\n'
   fi
 }
 
@@ -157,7 +117,7 @@ id = "format"
 name = "format"
 entry = "./lib/format.sh"
 language = "script"
-files = '\.(go|rs|ts|tsx|js|jsx|html|htm|templ|yml|yaml|sh|md|toml|json|py)$'
+files = '\.(go|rs|ts|tsx|js|jsx|html|htm|yml|yaml|sh|md|toml|json|py)$'
 stages = ["pre-commit"]
 
 [[repos.hooks]]
@@ -169,8 +129,8 @@ files = '(\.(go|rs|ts|tsx|js|jsx|yml|yaml|sh|toml|py)$)|((^|/)([Dd]ockerfile(\.[
 stages = ["pre-commit"]
 
 [[repos.hooks]]
-id = "gitleaks"
-name = "gitleaks"
+id = "kingfisher"
+name = "kingfisher"
 entry = "./lib/secrets.sh"
 language = "script"
 pass_filenames = false
@@ -191,19 +151,24 @@ EOF
 write_hook_wrapper() {
   local script_path="$1"
   local wrapper_path="$HOOK_WRAPPER_DIR/$script_path"
-  local runtime_pragma_dir
-
-  runtime_pragma_dir="$(render_runtime_pragma_dir)"
-
   mkdir -p "$HOOK_WRAPPER_DIR"
 
   {
-    printf '#!/usr/bin/env bash\n'
-    printf 'set -euo pipefail\n'
+    cat <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+PRAGMA_HOME="${PRAGMA_HOME:-$(git config --path --get pragma.home || true)}"
+PRAGMA_HOME="${PRAGMA_HOME:-$HOME/.pragma}"
+if [[ ! -x "$PRAGMA_HOME/lib/format.sh" ]]; then
+  printf 'Pragma not found at %s. Set PRAGMA_HOME or rerun install.sh.\n' "$PRAGMA_HOME" >&2
+  exit 1
+fi
+WRAPPER
     if $DOCKER_TOOLS; then
-      printf 'export PRAGMA_DOCKER_BIN_DIR=%s\n' "$(shell_escape_arg "$DOCKER_WRAPPER_BIN_DIR")"
+      printf 'export PRAGMA_TOOL_MODE=docker\n'
     fi
-    printf 'exec %s/lib/%s "$@"\n' "$runtime_pragma_dir" "$script_path"
+    # shellcheck disable=SC2016 # Variables expand when the generated hook runs.
+    printf 'exec "$PRAGMA_HOME/lib/%s" "$@"\n' "$script_path"
   } >"$wrapper_path"
 
   chmod +x "$wrapper_path"
@@ -267,7 +232,7 @@ if ! has_tool prek; then
     echo "  $PRAGMA_DIR/tools/install-tools.sh --agent"
     echo "  npm install -g @j178/prek"
     echo ""
-    read -rp "Attempt auto-install via Pragma's pinned installer? [Y/n] " answer
+    read -rp "Attempt auto-install via Pragma's pinned binary installer? [Y/n] " answer
     if [[ ! "$answer" =~ ^[Nn] ]]; then
       (cd "$TARGET_REPO" && PRAGMA_INSTALL_ONLY_TOOLS="prek" "$PRAGMA_DIR/tools/install-tools.sh" --agent) || {
         log_error "Failed to install prek"
@@ -280,14 +245,6 @@ if ! has_tool prek; then
   fi
 
   pragma_prepend_path "$PRAGMA_DIR/bin"
-
-  # Ensure GOPATH/bin is in PATH so we can find the just-installed binary
-  GOBIN_DIR="${GOBIN:-$(go env GOBIN 2>/dev/null)}"
-  GOBIN_DIR="${GOBIN_DIR:-$(go env GOPATH 2>/dev/null)/bin}"
-  GOBIN_DIR="${GOBIN_DIR:-$HOME/go/bin}"
-  if [[ -d "$GOBIN_DIR" ]] && [[ ":$PATH:" != *":$GOBIN_DIR:"* ]]; then
-    export PATH="$GOBIN_DIR:$PATH"
-  fi
 
   hash -r 2>/dev/null || true
 
@@ -325,7 +282,7 @@ generate_config() {
     printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path format.sh)")"
     printf 'language = "script"\n'
     write_env_line
-    printf "files = '\\\\.(go|rs|ts|tsx|js|jsx|html|htm|templ|yml|yaml|sh|md|toml|json|py)$'\n"
+    printf "files = '\\\\.(go|rs|ts|tsx|js|jsx|html|htm|yml|yaml|sh|md|toml|json|py)$'\n"
     printf 'stages = ["pre-commit"]\n\n'
 
     printf '[[repos.hooks]]\n'
@@ -338,8 +295,8 @@ generate_config() {
     printf 'stages = ["pre-commit"]\n\n'
 
     printf '[[repos.hooks]]\n'
-    printf 'id = "gitleaks"\n'
-    printf 'name = "gitleaks"\n'
+    printf 'id = "kingfisher"\n'
+    printf 'name = "kingfisher"\n'
     printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path secrets.sh)")"
     printf 'language = "script"\n'
     write_env_line
@@ -369,6 +326,8 @@ restore_self_install_config() {
 }
 
 if ! $SELF_INSTALL; then
+  # Machine-specific location belongs in local Git config, not committed hooks.
+  git -C "$TARGET_REPO" config --local pragma.home "$PRAGMA_DIR"
   generate_target_wrappers
 fi
 
@@ -378,7 +337,7 @@ if $SELF_INSTALL; then
       log_info "Self-install detected; updating repo-local prek.toml for Docker-backed tools"
       generate_config
       log_success "Updated repo-local prek.toml at $PREK_CONFIG"
-    elif grep -Fq 'PRAGMA_DOCKER_BIN_DIR' "$PREK_CONFIG"; then
+    elif grep -Eq 'PRAGMA_(DOCKER_BIN_DIR|TOOL_MODE)' "$PREK_CONFIG"; then
       log_info "Self-install detected; restoring repo-local prek.toml from tracked template"
       restore_self_install_config
       log_success "Restored repo-local prek.toml at $PREK_CONFIG"
@@ -411,13 +370,13 @@ if ! $SELF_INSTALL; then
   log_success "prek.toml written to $PREK_CONFIG"
 fi
 
-# ─── Step 3: Copy gitleaks config if target doesn't have one ──────────────────
+# ─── Step 3: Copy kingfisher config if target doesn't have one ──────────────────
 
-if [[ ! -f "$TARGET_REPO/.gitleaks.toml" ]]; then
-  cp "$PRAGMA_DIR/.gitleaks.toml" "$TARGET_REPO/.gitleaks.toml"
-  log_success "Copied default .gitleaks.toml"
+if [[ ! -f "$TARGET_REPO/kingfisher.yaml" ]]; then
+  cp "$PRAGMA_DIR/kingfisher.yaml" "$TARGET_REPO/kingfisher.yaml"
+  log_success "Copied default kingfisher.yaml"
 else
-  log_skip "Target repo already has .gitleaks.toml"
+  log_skip "Target repo already has kingfisher.yaml"
 fi
 
 # ─── Step 4: Run prek install ─────────────────────────────────────────────────
@@ -451,7 +410,7 @@ log_header "Setup Complete"
 log_success "Pragma is configured for ${BOLD}$TARGET_REPO${RESET}"
 echo ""
 log_info "Hooks installed:"
-echo "  ${GREEN}pre-commit${RESET} → format + lint + gitleaks"
+echo "  ${GREEN}pre-commit${RESET} → format + lint + kingfisher"
 echo "  ${GREEN}pre-push${RESET}   → tests"
 echo ""
 log_info "To skip hooks temporarily:"

@@ -46,14 +46,6 @@ golangci_default_config_path() {
   return 1
 }
 
-golangci_uses_pragma_default_config() {
-  local config_path="$1"
-  local default_path
-
-  default_path="$(golangci_default_config_path)" || return 1
-  [[ "$config_path" -ef "$default_path" ]]
-}
-
 go_module_root_for_file() {
   local file="$1"
   local repo_root dir
@@ -80,15 +72,6 @@ run_golangci_lint_in_dir() {
   (
     cd "$dir"
     golangci-lint "$@"
-  )
-}
-
-run_go_vet_in_dir() {
-  local dir="$1"
-
-  (
-    cd "$dir"
-    go vet ./...
   )
 }
 
@@ -135,8 +118,13 @@ lint_go() {
     lintable_go_files+=("$file")
   done
 
+  [[ ${#lintable_go_files[@]} -eq 0 ]] && return 0
   go_files=("${lintable_go_files[@]}")
-  [[ ${#go_files[@]} -eq 0 ]] && return 0
+
+  if ! golangci_is_v2; then
+    pragma_add_failure "golangci-lint" "tool" 0 "" "$LINT_RERUN" "golangci-lint v2 is required; run tools/install-tools.sh --agent" "" 1
+    return 1
+  fi
 
   repo_root="$(pwd)"
 
@@ -144,68 +132,39 @@ lint_go() {
     module_root="$(go_module_root_for_file "$file")"
     seen_root=false
 
-    for existing_root in "${module_roots[@]}"; do
-      if [[ "$existing_root" == "$module_root" ]]; then
-        seen_root=true
-        break
-      fi
-    done
+    if [[ ${#module_roots[@]} -gt 0 ]]; then
+      for existing_root in "${module_roots[@]}"; do
+        if [[ "$existing_root" == "$module_root" ]]; then
+          seen_root=true
+          break
+        fi
+      done
+    fi
 
     if ! $seen_root; then
       module_roots+=("$module_root")
     fi
   done
 
-  if has_tool golangci-lint; then
-    log_info "Linting Go files..."
-    local -a golangci_base_args=(run --new-from-rev=HEAD --fix=false)
-    local -a golangci_args=()
-    local config_path
+  log_info "Linting Go files..."
+  local -a golangci_base_args=(run --fix=false)
+  local -a golangci_args=()
+  local config_path
 
-    if config_path="$(golangci_repo_config_path)"; then
-      if golangci_uses_pragma_default_config "$config_path" && ! golangci_is_v2; then
-        log_warn "Detected golangci-lint v1; skipping Pragma's bundled v2 config"
-        config_path=""
-      else
-        :
-      fi
-    elif config_path="$(golangci_default_config_path)"; then
-      if golangci_is_v2; then
-        :
-      else
-        log_warn "Detected golangci-lint v1; skipping Pragma's bundled v2 config"
-        config_path=""
-      fi
-    fi
-
-    for module_root in "${module_roots[@]}"; do
-      golangci_args=("${golangci_base_args[@]}")
-
-      if [[ -n "${config_path:-}" ]]; then
-        effective_config_path="$config_path"
-
-        if [[ "$module_root" != "$repo_root" ]] && [[ "$effective_config_path" != /* ]]; then
-          effective_config_path="$(repo_relative_path_from_dir "$module_root" "$effective_config_path")"
-        fi
-
-        golangci_args+=(--config "$effective_config_path")
-      fi
-
-      pragma_run "golangci-lint" "lint" 0 "" "$LINT_RERUN" "go lint failed" run_golangci_lint_in_dir "$module_root" "${golangci_args[@]}" || return 1
-    done
-  else
-    # Fallback: go vet
-    if has_tool go; then
-      log_info "Linting Go files (go vet fallback)..."
-      for module_root in "${module_roots[@]}"; do
-        pragma_run "go" "lint" 0 "" "$LINT_RERUN" "go vet failed" run_go_vet_in_dir "$module_root" || return 1
-      done
-    else
-      log_warn "Missing tool: ${BOLD}golangci-lint${RESET} or ${BOLD}go${RESET} (go linter)"
-      pragma_add_failure "golangci-lint" "tool" 0 "" "$LINT_RERUN" "missing tool: golangci-lint or go" "" 1
-      return 1
-    fi
+  if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    golangci_base_args+=(--new-from-rev=HEAD)
   fi
+  config_path="$(golangci_repo_config_path || golangci_default_config_path)" || return 1
+
+  for module_root in "${module_roots[@]}"; do
+    golangci_args=("${golangci_base_args[@]}")
+    effective_config_path="$config_path"
+    if [[ "$module_root" != "$repo_root" && "$effective_config_path" != /* ]]; then
+      effective_config_path="$(repo_relative_path_from_dir "$module_root" "$effective_config_path")"
+    fi
+    golangci_args+=(--config "$effective_config_path")
+    pragma_run "golangci-lint" "lint" 0 "" "$LINT_RERUN" "go lint failed" run_golangci_lint_in_dir "$module_root" "${golangci_args[@]}" || return 1
+  done
 }
 
 lint_rust() {

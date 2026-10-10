@@ -2,29 +2,26 @@
 # install-tools.sh — Install missing tools for pragma
 #
 # Downloads pre-built binaries from GitHub Releases / official installers.
-# No Go, Rust, or cargo required.
+# Go is needed only to build goimports; Rust tooling uses rustup.
 #
 # Usage:
-#   install-tools.sh [--agent] [--docker]
+#   install-tools.sh [--agent] [--docker] [--update]
 #     --agent  Non-interactive auto-install
 #     --docker Install Docker-backed wrappers instead of host tools
+#     --update Reinstall native tools at the committed versions
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
 source "$PRAGMA_DIR/lib/common.sh"
 source "$PRAGMA_DIR/lib/detect.sh"
+source "$PRAGMA_DIR/tools/versions.sh"
 
 UNSUPPORTED_HOST_ERROR="Unsupported host: Pragma bootstrap/install-tools are supported on macOS and Linux only."
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$OS" in
-  linux)
-    OS_GITLEAKS="Linux"
-    ;;
-  darwin)
-    OS_GITLEAKS="Darwin"
-    ;;
+  linux | darwin) ;;
   *)
     log_error "$UNSUPPORTED_HOST_ERROR"
     exit 1
@@ -33,11 +30,13 @@ esac
 
 AGENT_MODE=false
 DOCKER_MODE=false
+UPDATE_TOOLS=false
 
 for arg in "$@"; do
   case "$arg" in
     --agent) AGENT_MODE=true ;;
     --docker) DOCKER_MODE=true ;;
+    --update) UPDATE_TOOLS=true ;;
     *)
       log_error "Unknown option: $arg"
       exit 1
@@ -53,11 +52,10 @@ fi
 DOCKER_BIN_DIR="$BIN_DIR/docker"
 
 DOCKER_WRAPPED_TOOLS=(
-  prek
-  gitleaks
+  kingfisher
   go
+  gofmt
   goimports
-  templ
   golangci-lint
   cargo
   rustfmt
@@ -74,29 +72,20 @@ DOCKER_WRAPPED_TOOLS=(
   ruff
 )
 
-GOLANGCI_LINT_VERSION="v2.12.2"
-HADOLINT_VERSION="v2.14.0"
-GITLEAKS_VERSION="v8.30.1"
-SHELLCHECK_VERSION="v0.11.0"
-SHFMT_VERSION="v3.13.1"
-TAPLO_VERSION="0.10.0"
-
 ARCH="$(uname -m)"
 
 case "$ARCH" in
   x86_64)
-    ARCH_GO="amd64"
+    ARCH_BINARY="amd64"
     ARCH_ALT="x86_64"
     ARCH_HADOLINT="x86_64"
-    ARCH_GITLEAKS="x64"
-    ARCH_GOLANGCI="amd64"
+    ARCH_KINGFISHER="x64"
     ;;
   aarch64 | arm64)
-    ARCH_GO="arm64"
+    ARCH_BINARY="arm64"
     ARCH_ALT="aarch64"
     ARCH_HADOLINT="arm64"
-    ARCH_GITLEAKS="arm64"
-    ARCH_GOLANGCI="arm64"
+    ARCH_KINGFISHER="arm64"
     ;;
   *)
     log_error "Unsupported architecture: $ARCH"
@@ -182,7 +171,11 @@ extract_checksum_entry() {
   [[ -s "$output_file" ]]
 }
 
+NPM_TOOLING_INSTALLED=false
+PYTHON_TOOLING_INSTALLED=false
+
 ensure_npm_tooling_installed() {
+  $NPM_TOOLING_INSTALLED && return 0
   require_commands npm || return 1
 
   if [[ ! -f "$PRAGMA_DIR/.npm-packages/package-lock.json" ]]; then
@@ -190,7 +183,8 @@ ensure_npm_tooling_installed() {
     return 1
   fi
 
-  npm ci --ignore-scripts --no-fund --no-audit --prefix "$PRAGMA_DIR/.npm-packages"
+  npm ci --ignore-scripts --no-fund --no-audit --prefix "$PRAGMA_DIR/.npm-packages" || return 1
+  NPM_TOOLING_INSTALLED=true
 }
 
 node_supports_eslint() {
@@ -202,14 +196,14 @@ node_supports_eslint() {
   IFS='.' read -r major minor patch <<<"$version"
   [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]] || return 1
 
-  ((major > 21)) ||
-    ((major == 21 && minor >= 1)) ||
-    ((major == 20 && minor >= 9)) ||
-    ((major == 18 && minor >= 18))
+  ((major >= 24)) ||
+    ((major == 22 && minor >= 13)) ||
+    ((major == 20 && minor >= 19))
 }
 
 ensure_python_tooling_installed() {
-  local requirements_file="$1"
+  $PYTHON_TOOLING_INSTALLED && return 0
+  local requirements_file="$PRAGMA_DIR/tools/requirements/python.txt"
   local venv_dir="$PRAGMA_DIR/.venv"
 
   require_commands python3 || return 1
@@ -219,16 +213,9 @@ ensure_python_tooling_installed() {
     return 1
   fi
 
-  python3 -m venv "$venv_dir"
-  "$venv_dir/bin/pip" install --quiet --require-hashes -r "$requirements_file"
-}
-
-download_binary() {
-  local name="$1" url="$2"
-  require_commands curl || return 1
-  log_info "Downloading $name..."
-  curl -fsSL "$url" -o "$BIN_DIR/$name"
-  chmod +x "$BIN_DIR/$name"
+  python3 -m venv "$venv_dir" || return 1
+  "$venv_dir/bin/python" -m pip install --quiet --require-hashes -r "$requirements_file" || return 1
+  PYTHON_TOOLING_INSTALLED=true
 }
 
 download_binary_with_checksum() {
@@ -282,35 +269,6 @@ download_binary_with_expected_sha256() {
   rm -rf "$tmp"
 }
 
-download_gzip_binary_with_checksum() {
-  local name="$1"
-  local url="$2"
-  local checksum_url="$3"
-  local asset_name="$4"
-  local tmp
-
-  require_commands curl gunzip dirname basename awk || return 1
-
-  tmp=$(mktemp -d)
-  curl -fsSL "$url" -o "$tmp/$asset_name"
-  curl -fsSL "$checksum_url" -o "$tmp/checksums.txt"
-
-  if ! extract_checksum_entry "$tmp/checksums.txt" "$asset_name" "$tmp/checksum.txt"; then
-    log_error "Could not find checksum for $asset_name"
-    rm -rf "$tmp"
-    return 1
-  fi
-
-  verify_checksum_file "$tmp/checksum.txt" || {
-    rm -rf "$tmp"
-    return 1
-  }
-
-  gunzip -c "$tmp/$asset_name" >"$BIN_DIR/$name"
-  chmod +x "$BIN_DIR/$name"
-  rm -rf "$tmp"
-}
-
 download_gzip_binary_with_expected_sha256() {
   local name="$1"
   local url="$2"
@@ -334,27 +292,6 @@ download_gzip_binary_with_expected_sha256() {
 }
 
 # Download + extract from a tar.gz (finds the binary inside)
-download_tarball() {
-  local name="$1" url="$2"
-  require_commands curl tar || return 1
-  log_info "Downloading $name..."
-  local tmp
-  tmp=$(mktemp -d)
-  curl -fsSL "$url" | tar -xz -C "$tmp"
-  # Find the binary
-  local found
-  found=$(find "$tmp" -name "$name" -type f | head -1)
-  if [[ -n "$found" ]]; then
-    mv "$found" "$BIN_DIR/$name"
-    chmod +x "$BIN_DIR/$name"
-  else
-    log_error "Could not find $name in archive"
-    rm -rf "$tmp"
-    return 1
-  fi
-  rm -rf "$tmp"
-}
-
 download_tarball_with_checksum() {
   local name="$1"
   local url="$2"
@@ -395,28 +332,8 @@ download_tarball_with_checksum() {
   rm -rf "$tmp"
 }
 
-# Download + extract from a .tar.xz
-download_tarxz() {
-  local name="$1" url="$2"
-  require_commands curl tar || return 1
-  log_info "Downloading $name..."
-  local tmp
-  tmp=$(mktemp -d)
-  curl -fsSL "$url" | tar -xJ -C "$tmp"
-  local found
-  found=$(find "$tmp" -name "$name" -type f | head -1)
-  if [[ -n "$found" ]]; then
-    mv "$found" "$BIN_DIR/$name"
-    chmod +x "$BIN_DIR/$name"
-  else
-    log_error "Could not find $name in archive"
-    rm -rf "$tmp"
-    return 1
-  fi
-  rm -rf "$tmp"
-}
-
-download_tarxz_with_expected_sha256() {
+# Download + extract from a compressed tar archive
+download_archive_with_expected_sha256() {
   local name="$1"
   local url="$2"
   local asset_name="$3"
@@ -434,7 +351,7 @@ download_tarxz_with_expected_sha256() {
     return 1
   }
 
-  tar -xJf "$tmp/$asset_name" -C "$tmp"
+  tar -xf "$tmp/$asset_name" -C "$tmp"
 
   local found
   found=$(find "$tmp" -name "$name" -type f | head -1)
@@ -447,58 +364,39 @@ download_tarxz_with_expected_sha256() {
     return 1
   fi
 
-  rm -rf "$tmp"
-}
-
-# Download + extract from a .zip
-download_zip() {
-  local name="$1" url="$2"
-  require_commands curl unzip || return 1
-  log_info "Downloading $name..."
-  local tmp
-  tmp=$(mktemp -d)
-  curl -fsSL "$url" -o "$tmp/archive.zip"
-  unzip -qo "$tmp/archive.zip" -d "$tmp"
-  local found
-  found=$(find "$tmp" -name "$name" -type f | head -1)
-  if [[ -n "$found" ]]; then
-    mv "$found" "$BIN_DIR/$name"
-    chmod +x "$BIN_DIR/$name"
-  else
-    log_error "Could not find $name in archive"
-    rm -rf "$tmp"
-    return 1
-  fi
   rm -rf "$tmp"
 }
 
 # ─── Tool installers ─────────────────────────────────────────────────────────
-# Each function downloads a pre-built binary. No compilers needed.
+# Use pinned binaries, lockfiles, or the pinned goimports module.
 
 install_prek() {
-  if has_tool npm; then
-    log_info "Installing prek via npm lockfile..."
-    ensure_npm_tooling_installed || return 1
-    cat >"$BIN_DIR/prek" <<'WRAPPER'
-#!/usr/bin/env bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
-exec "$PRAGMA_DIR/.npm-packages/node_modules/.bin/prek" "$@"
-WRAPPER
-    chmod +x "$BIN_DIR/prek"
-  else
-    log_warn "prek requires npm — skipping"
-    return 1
-  fi
+  local target_os
+  case "$OS" in
+    linux) target_os="unknown-linux-gnu" ;;
+    darwin) target_os="apple-darwin" ;;
+  esac
+  local asset_name="prek-${ARCH_ALT}-${target_os}.tar.gz"
+  download_tarball_with_checksum prek \
+    "https://github.com/j178/prek/releases/download/${PREK_VERSION}/${asset_name}" \
+    "https://github.com/j178/prek/releases/download/${PREK_VERSION}/${asset_name}.sha256" \
+    "$asset_name"
 }
 
-install_gitleaks() {
-  local asset_name="gitleaks_${GITLEAKS_VERSION#v}_${OS_GITLEAKS}_${ARCH_GITLEAKS}.tar.gz"
-  download_tarball_with_checksum \
-    gitleaks \
-    "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/${asset_name}" \
-    "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_checksums.txt" \
-    "$asset_name"
+install_kingfisher() {
+  local asset_name="kingfisher-${OS}-${ARCH_KINGFISHER}.tgz"
+  local expected_sha
+
+  case "$OS:$ARCH_KINGFISHER" in
+    linux:x64) expected_sha="84e4a4c45814f05e80aa8eee768e5170d758736fa116ffaf03565da4d5a77447" ;;
+    linux:arm64) expected_sha="da7508a90ff36337b41d12e63814cca3ac5586abdcf8c194898059c1ed5e1f81" ;;
+    darwin:x64) expected_sha="e91b74c447b759fc72f993373b80ce7a6122a275f5793df61928b9c3c4eac1e3" ;;
+    darwin:arm64) expected_sha="131de009409be38ae595550acfa8811ff3d43912715687758ff6a84157f1ef5e" ;;
+  esac
+
+  download_archive_with_expected_sha256 kingfisher \
+    "https://github.com/mongodb/kingfisher/releases/download/${KINGFISHER_VERSION}/${asset_name}" \
+    "$asset_name" "$expected_sha"
 }
 
 install_goimports() {
@@ -511,18 +409,8 @@ install_goimports() {
   fi
 }
 
-install_templ() {
-  if has_tool go; then
-    log_info "Installing templ via pinned module source..."
-    go build -C "$PRAGMA_DIR/tools/internal/templ" -mod=readonly -o "$BIN_DIR/templ" github.com/a-h/templ/cmd/templ
-  else
-    log_warn "templ requires Go — skipping"
-    return 1
-  fi
-}
-
 install_golangci_lint() {
-  local asset_name="golangci-lint-${GOLANGCI_LINT_VERSION#v}-${OS}-${ARCH_GOLANGCI}.tar.gz"
+  local asset_name="golangci-lint-${GOLANGCI_LINT_VERSION#v}-${OS}-${ARCH_BINARY}.tar.gz"
   download_tarball_with_checksum \
     golangci-lint \
     "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/${asset_name}" \
@@ -559,7 +447,7 @@ exec node "$PRAGMA_DIR/.npm-packages/node_modules/.bin/eslint" "$@"
 WRAPPER
     chmod +x "$BIN_DIR/eslint"
   else
-    log_warn "eslint requires npm and Node 18.18+, 20.9+, or 21.1+ — skipping"
+    log_warn "eslint requires npm and Node 20.19+, 22.13+, or 24+ — skipping"
     return 1
   fi
 }
@@ -567,12 +455,12 @@ WRAPPER
 install_yamllint() {
   if has_tool python3; then
     log_info "Installing yamllint via pinned Python requirements..."
-    ensure_python_tooling_installed "$PRAGMA_DIR/tools/requirements/host-python.txt" || return 1
+    ensure_python_tooling_installed || return 1
     cat >"$BIN_DIR/yamllint" <<'WRAPPER'
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
-exec "$PRAGMA_DIR/.venv/bin/yamllint" "$@"
+exec "$PRAGMA_DIR/.venv/bin/python" -m yamllint "$@"
 WRAPPER
     chmod +x "$BIN_DIR/yamllint"
   else
@@ -597,7 +485,7 @@ install_hadolint() {
   download_binary_with_checksum \
     hadolint \
     "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/${asset_name}" \
-    "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/${asset_name}.sha256" \
+    "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/checksums.sha256" \
     "$asset_name"
 }
 
@@ -616,23 +504,23 @@ install_shellcheck() {
       ;;
   esac
 
-  download_tarxz_with_expected_sha256 shellcheck \
+  download_archive_with_expected_sha256 shellcheck \
     "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${asset_name}" \
     "$asset_name" \
     "$expected_sha"
 }
 
 install_shfmt() {
-  local asset_name="shfmt_${SHFMT_VERSION}_${OS}_${ARCH_GO}"
+  local asset_name="shfmt_${SHFMT_VERSION}_${OS}_${ARCH_BINARY}"
   local expected_sha
 
-  case "$OS:$ARCH_GO" in
-    linux:amd64) expected_sha="fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1" ;;
-    linux:arm64) expected_sha="32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7" ;;
-    darwin:amd64) expected_sha="6feedafc72915794163114f512348e2437d080d0047ef8b8fa2ec63b575f12af" ;;
-    darwin:arm64) expected_sha="9680526be4a66ea1ffe988ed08af58e1400fe1e4f4aef5bd88b20bb9b3da33f8" ;;
+  case "$OS:$ARCH_BINARY" in
+    linux:amd64) expected_sha="76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf" ;;
+    linux:arm64) expected_sha="5f2db09dae91fca848f7adbdd014632e921a383863a2ad7e0450ad3aba0c6489" ;;
+    darwin:amd64) expected_sha="d33eee0da0f92835b3562e9767a05cee7e4eaeef47daa03bfd09da17b4b590a6" ;;
+    darwin:arm64) expected_sha="b7c872db63553ccffc7253aba3ed7d4885a27d83f1ba567b1138c6315a5847e5" ;;
     *)
-      log_warn "shfmt is not available for $OS/$ARCH_GO — skipping"
+      log_warn "shfmt is not available for $OS/$ARCH_BINARY — skipping"
       return 1
       ;;
   esac
@@ -664,10 +552,21 @@ install_taplo() {
     "$expected_sha"
 }
 
+install_pytest() {
+  ensure_python_tooling_installed || return 1
+  cat >"$BIN_DIR/pytest" <<'WRAPPER'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
+exec "$PRAGMA_DIR/.venv/bin/python" -m pytest "$@"
+WRAPPER
+  chmod +x "$BIN_DIR/pytest"
+}
+
 install_ruff() {
   if has_tool python3; then
     log_info "Installing ruff via pinned Python requirements..."
-    ensure_python_tooling_installed "$PRAGMA_DIR/tools/requirements/host-python.txt" || return 1
+    ensure_python_tooling_installed || return 1
     cat >"$BIN_DIR/ruff" <<'WRAPPER'
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -717,7 +616,7 @@ has_repo_tool() {
 
   case "$tool" in
     golangci-lint)
-      has_tool golangci-lint
+      golangci_is_v2
       ;;
     clippy)
       cargo_has_subcommand clippy
@@ -736,7 +635,6 @@ tools_for_lang() {
     go) echo "goimports golangci-lint" ;;
     rust) echo "rustfmt clippy" ;;
     typescript) echo "prettier eslint" ;;
-    templ) echo "templ prettier" ;;
     html) echo "prettier" ;;
     yaml) echo "prettier yamllint" ;;
     docker) echo "hadolint" ;;
@@ -744,7 +642,7 @@ tools_for_lang() {
     markdown) echo "prettier" ;;
     toml) echo "taplo" ;;
     json) echo "prettier" ;;
-    python) echo "ruff" ;;
+    python) echo "ruff pytest" ;;
     *) echo "" ;;
   esac
 }
@@ -770,6 +668,8 @@ install_docker_wrappers() {
     return 1
   fi
 
+  # Git executes prek on the host, so never install a Docker-backed hook manager.
+  rm -f "$DOCKER_BIN_DIR/prek" "$DOCKER_BIN_DIR/templ" "$DOCKER_BIN_DIR/gitleaks"
   log_header "Docker Tooling Setup"
 
   local tool
@@ -803,7 +703,7 @@ main() {
     read -r -a required_tools <<<"$PRAGMA_INSTALL_ONLY_TOOLS"
   else
     # Always need these
-    required_tools=("prek" "gitleaks")
+    required_tools=("prek" "kingfisher")
 
     # Detect languages and add their tools
     local langs
@@ -825,7 +725,7 @@ main() {
   # Check what's missing
   local missing=()
   for tool in "${required_tools[@]}"; do
-    if has_repo_tool "$tool"; then
+    if ! $UPDATE_TOOLS && has_repo_tool "$tool"; then
       log_success "$tool is available"
     else
       missing+=("$tool")

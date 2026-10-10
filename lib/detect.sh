@@ -29,10 +29,6 @@ detect_from_files() {
     esac
 
     case "$file" in
-      *.templ) langs+=("templ") ;;
-    esac
-
-    case "$file" in
       *.html | *.htm) langs+=("html") ;;
     esac
 
@@ -82,7 +78,7 @@ html_file_contains_template_syntax() {
 
 repo_has_match_within_depth() {
   find . \
-    \( -path './.git' -o -path './node_modules' -o -path './.venv' -o -path './*/*/*/*' \) -prune -o \
+    \( -path './.git' -o -name node_modules -o -name .venv -o -name target -o -path './*/*/*/*' \) -prune -o \
     "$@" -print -quit 2>/dev/null | grep -q .
 }
 
@@ -100,20 +96,13 @@ detect_from_repo() {
   fi
 
   # TypeScript
-  if [[ -f "tsconfig.json" ]] || (
-    [[ -f "package.json" ]] && grep -qE '"typescript"' package.json 2>/dev/null
-  ); then
+  if [[ -f "tsconfig.json" || -f "package.json" ]]; then
     langs+=("typescript")
   fi
 
   # HTML
   if repo_has_match_within_depth -name '*.html'; then
     langs+=("html")
-  fi
-
-  # templ
-  if repo_has_match_within_depth -name '*.templ'; then
-    langs+=("templ")
   fi
 
   # YAML
@@ -151,7 +140,9 @@ detect_from_repo() {
     langs+=("python")
   fi
 
-  printf '%s\n' "${langs[@]}" | sort -u
+  if [[ ${#langs[@]} -gt 0 ]]; then
+    printf '%s\n' "${langs[@]}" | sort -u
+  fi
 }
 
 # ─── CLI entrypoint ──────────────────────────────────────────────────────────

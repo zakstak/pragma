@@ -46,6 +46,16 @@ if git -C "$CURRENT_DIR" rev-parse --show-toplevel >/dev/null 2>&1; then
   fi
 fi
 
+# Linked worktrees keep their Git metadata outside the mounted worktree.
+GIT_COMMON_DIR=""
+GIT_WORKTREE_DIR=""
+if [[ -f "$REPO_ROOT/.git" ]]; then
+  GIT_COMMON_DIR="$(git -C "$REPO_ROOT" rev-parse --git-common-dir)"
+  GIT_COMMON_DIR="$(cd "$REPO_ROOT" && cd "$GIT_COMMON_DIR" && pwd)"
+  GIT_WORKTREE_DIR="$(git -C "$REPO_ROOT" rev-parse --absolute-git-dir)"
+  assert_supported_volume_path "$GIT_COMMON_DIR"
+fi
+
 assert_supported_volume_path "$REPO_ROOT"
 assert_supported_volume_path "$PRAGMA_DIR"
 
@@ -61,9 +71,29 @@ DOCKER_ARGS=(
   --env "NPM_CONFIG_CACHE=/tmp/pragma-cache/npm"
   --env "PIP_CACHE_DIR=/tmp/pragma-cache/pip"
   --env "GOCACHE=/tmp/pragma-cache/go-build"
+  --env "GOMODCACHE=/tmp/pragma-cache/go-mod"
   --env "GOLANGCI_LINT_CACHE=/tmp/pragma-cache/golangci-lint"
+  --env "CARGO_HOME=/tmp/pragma-cache/cargo"
   --env "PRAGMA_RUNNING_IN_DOCKER=1"
 )
+
+if [[ "$TOOL_NAME" == kingfisher ]]; then
+  KINGFISHER_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/pragma/kingfisher-docker"
+  assert_supported_volume_path "$KINGFISHER_CACHE_DIR"
+  (umask 077 && mkdir -p "$KINGFISHER_CACHE_DIR")
+  DOCKER_ARGS+=(
+    --volume "$KINGFISHER_CACHE_DIR:/tmp/pragma-kingfisher-cache"
+    --env "KF_RULE_CACHE_DIR=/tmp/pragma-kingfisher-cache"
+  )
+fi
+
+if [[ -n "$GIT_COMMON_DIR" ]]; then
+  DOCKER_ARGS+=(
+    --volume "$GIT_COMMON_DIR:$GIT_COMMON_DIR"
+    --env "GIT_DIR=$GIT_WORKTREE_DIR"
+    --env "GIT_WORK_TREE=/workspace"
+  )
+fi
 
 if [[ "$PRAGMA_DIR" != "$REPO_ROOT" ]]; then
   DOCKER_ARGS+=(--volume "$PRAGMA_DIR:$PRAGMA_DIR:ro")

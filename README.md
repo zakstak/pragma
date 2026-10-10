@@ -40,6 +40,36 @@ Bootstrap expects the target to already be a Git repository.
 Bootstrap and tool installation are supported on macOS and Linux only. Windows
 hosts are not supported, including when using `--docker-tools`.
 
+## Portable hook configuration
+
+Generated hooks resolve Pragma in this order:
+
+1. `PRAGMA_HOME`, if set.
+2. `git config --path --get pragma.home`.
+3. `~/.pragma`.
+
+Bootstrap stores a custom checkout path in local Git config. Generated wrappers
+and `prek.toml` contain no machine-specific checkout paths. You can commit them
+and bootstrap each clone on its own machine.
+
+If you move your Pragma checkout, rerun bootstrap or update the local setting:
+
+```bash
+git config --local pragma.home /new/path/to/pragma
+```
+
+For a temporary override:
+
+```bash
+PRAGMA_HOME=/path/to/pragma prek run --all-files
+```
+
+Go remains supported with `goimports`, golangci-lint v2, and `go test ./...`.
+Golangci-lint v1 compatibility and Go templ support have been removed. `.templ`
+files are ignored. Older linters must be upgraded; hooks do not fall back to
+`go vet` or skip the v2 configuration. To update an existing repository's
+generated hooks, rerun `install.sh`.
+
 ## Docker Tooling Mode
 
 If you want Pragma to run against a prebuilt Docker toolchain on macOS or Linux
@@ -52,7 +82,7 @@ docker build -t pragma-tools:local ~/.pragma
 ```
 
 Pragma's Docker wrappers follow the common `docker run --user uid:gid` pattern
-used by tools like Composer and golangci-lint:
+used by tools like Composer:
 
 - bind-mount the target repo at `/workspace`
 - run container processes as your host UID/GID
@@ -78,15 +108,17 @@ bootstrap without `--docker-tools`:
 ```
 
 In native mode, `install.sh` still needs `prek` to finish bootstrap. If it is
-not already on your `PATH`, Pragma first tries its own pinned installer. You can
-also install `prek` yourself first (for example `npm install -g @j178/prek`).
+not already on your `PATH`, Pragma first tries its own pinned release binary
+installer. You can also install `prek` yourself first. Node is not required to
+install `prek`. The hook manager runs on the host in both native and Docker
+modes.
 
 For self-installs, Docker mode updates the repo-local `prek.toml` in place to
-inject a repo-scoped `PRAGMA_DOCKER_BIN_DIR` hook environment while keeping the
-existing relative `./lib/...` entries. Native self-installs continue to keep the
-checked-in `prek.toml` unchanged. Self-installs require an existing repo-local
-`prek.toml`; `install.sh` will not generate one from scratch for the Pragma repo
-itself.
+inject a repo-scoped `PRAGMA_TOOL_MODE=docker` hook environment while keeping
+the existing relative `./lib/...` entries. Native self-installs continue to keep
+the checked-in `prek.toml` unchanged. Self-installs require an existing
+repo-local `prek.toml`; `install.sh` will not generate one from scratch for the
+Pragma repo itself.
 
 ## What It Does
 
@@ -94,11 +126,36 @@ itself.
 
 - **Formats** code with the right formatter per language
 - **Lints** code with the right linter per language
-- **Scans for secrets** with [gitleaks](https://github.com/gitleaks/gitleaks)
+- **Scans for secrets** with [Kingfisher](https://github.com/mongodb/kingfisher)
+
+When formatting changes files, the commit stops. Review the changes, stage the
+files, and commit again. Hooks leave the Git index unchanged.
 
 ### Pre-push (full repo)
 
 - **Runs tests** for all detected languages
+
+## Secret scanning
+
+The pre-commit hook uses Kingfisher 2.11.1 to scan staged changes. It uses two
+scan workers, redacts findings, and disables credential validation and update
+checks. Any finding or nonzero scanner exit blocks the commit.
+
+Bootstrap copies `kingfisher.yaml` into the target repository unless it already
+exists. The hook loads that file explicitly, falling back to Pragma's defaults
+when it is absent. The default exclusions and placeholder patterns carry over
+from the previous scanner. Edit the project's `filters` or `rules` settings for
+its own policy; `kingfisher:ignore` suppresses an intentional finding inline.
+
+Rerun `install.sh` in existing repositories to replace the Gitleaks hook. Custom
+`.gitleaks.toml` rules are not converted automatically: move them to
+Kingfisher's YAML configuration and custom rule format before retiring that
+file. Pragma leaves existing project files in place.
+
+Kingfisher reuses its compiled rule cache on native hosts. Docker wrappers mount
+a private cache at `${XDG_CACHE_HOME:-$HOME/.cache}/pragma/kingfisher-docker` so
+repeated container runs reuse it too. The first scan can take longer while rules
+compile.
 
 ## Hook Output
 
@@ -135,22 +192,21 @@ PRAGMA_OUTPUT_FORMAT=human git push
 
 ## Supported Languages
 
-| Language   | Formatter                    | Linter          | Test Runner             |
-| ---------- | ---------------------------- | --------------- | ----------------------- |
-| Go         | `goimports`                  | `golangci-lint` | `go test ./...`         |
-| Rust       | `rustfmt`                    | `clippy`        | `cargo test`            |
-| TypeScript | `prettier`                   | `eslint`        | `bun test` / `npm test` |
-| templ      | `templ fmt`                  | —               | —                       |
-| HTML       | `prettier` (plain HTML only) | —               | —                       |
-| YAML       | `prettier`                   | `yamllint`      | —                       |
-| Docker     | —                            | `hadolint`      | —                       |
-| Shell      | `shfmt`                      | `shellcheck`    | —                       |
-| Markdown   | `prettier`                   | —               | —                       |
-| TOML       | `taplo`                      | `taplo check`   | —                       |
-| JSON       | `prettier`                   | —               | —                       |
-| Python     | `ruff`                       | `ruff check`    | `pytest`                |
+| Language   | Formatter                    | Linter             | Test Runner             |
+| ---------- | ---------------------------- | ------------------ | ----------------------- |
+| Go         | `goimports` / `gofmt`        | `golangci-lint` v2 | `go test ./...`         |
+| Rust       | `rustfmt`                    | `clippy`           | `cargo test`            |
+| TypeScript | `prettier`                   | `eslint`           | `bun test` / `npm test` |
+| HTML       | `prettier` (plain HTML only) | —                  | —                       |
+| YAML       | `prettier`                   | `yamllint`         | —                       |
+| Docker     | —                            | `hadolint`         | —                       |
+| Shell      | `shfmt`                      | `shellcheck`       | —                       |
+| Markdown   | `prettier`                   | —                  | —                       |
+| TOML       | `taplo`                      | `taplo check`      | —                       |
+| JSON       | `prettier`                   | —                  | —                       |
+| Python     | `ruff`                       | `ruff check`       | `pytest`                |
 
-All repos also get **gitleaks** secret scanning.
+All repos also get **Kingfisher** secret scanning.
 
 ## Language Detection
 
@@ -158,7 +214,7 @@ Pragma auto-detects languages by:
 
 - **Pre-commit**: checking file extensions of staged files
 - **Pre-push**: scanning for project markers (`go.mod`, `Cargo.toml`,
-  `tsconfig.json`, etc.)
+  `package.json`, `tsconfig.json`, and Python manifests)
 
 No configuration needed — it figures out what to run.
 
@@ -166,7 +222,6 @@ No configuration needed — it figures out what to run.
 
 Pragma treats **plain HTML** and **templated HTML** differently on purpose.
 
-- `.templ` files are formatted with `templ fmt`.
 - Plain `.html` / `.htm` files are formatted with `prettier`.
 - `.html` / `.htm` files that contain template delimiters like `{{ ... }}`,
   `{% ... %}`, or `{# ... #}` are **not** sent through the generic HTML
@@ -174,10 +229,8 @@ Pragma treats **plain HTML** and **templated HTML** differently on purpose.
 
 That keeps Pragma from fighting Askama/Jinja-style templates where delimiter
 whitespace and block structure are part of the template language, not just HTML
-layout. For Go templ, Pragma uses the native formatter instead; `templ fmt` also
-uses Prettier for embedded `script` and `style` blocks when Prettier is
-available on `PATH`. HTMX attributes still work normally inside plain HTML
-because they are handled as regular HTML attributes.
+layout. HTMX attributes work inside plain HTML because they are regular HTML
+attributes.
 
 ## Bootstrap Modes
 
@@ -211,12 +264,13 @@ rm prek.toml
 After bootstrap, Pragma detects the languages in the target repo and installs
 any missing formatter/linter/test dependencies it needs.
 
-Most tools are downloaded as pre-built binaries from GitHub Releases — no Go,
-Rust, or compilation required:
+Most tools are downloaded as pre-built binaries from GitHub Releases.
+`goimports` requires Go 1.26+ to build:
 
 ```bash
 ~/.pragma/tools/install-tools.sh         # interactive
 ~/.pragma/tools/install-tools.sh --agent  # auto-install
+~/.pragma/tools/install-tools.sh --agent --update  # refresh to committed versions
 ~/.pragma/tools/install-tools.sh --docker --agent  # install Docker-backed wrappers
 ```
 
@@ -230,13 +284,72 @@ tooling image as your host UID/GID. Docker-backed wrappers live under
 
 Some tools still rely on package managers:
 
+- `goimports` builds from its pinned module using your installed Go toolchain.
+  Docker includes a pinned Go toolchain.
 - `prettier` and `eslint` install from Pragma's committed `package-lock.json`
-  via `npm ci`; ESLint v9 requires Node 18.18+, 20.9+, or 21.1+
-- `ruff` and `yamllint` install from Pragma's committed hashed requirements via
-  a repo-local Python venv
+  via `npm ci`; ESLint v10 requires Node 20.19+, 22.13+, or 24+
+- `ruff`, `yamllint`, and `pytest` install from Pragma's committed hashed
+  requirements via a repo-local Python venv
 
 Binary downloads require `curl`, and archive extraction may also need `tar`,
-`gunzip`, or `unzip` depending on the tool.
+`gunzip`, or `xz` depending on the tool. Python tools require Python 3.10+ with
+`venv` support.
+
+## Update tool versions
+
+Native installs and Docker use the same installer. Binary versions are in
+`tools/versions.sh`. Node tools are in `.npm-packages/package.json`, and Python
+tools are in `tools/requirements/python.in`.
+
+After changing Node or Python versions, regenerate their lockfiles:
+
+```bash
+npm install --package-lock-only --ignore-scripts --prefix .npm-packages
+uv pip compile --universal --python-version 3.10 --generate-hashes --no-header \
+  --output-file tools/requirements/python.txt tools/requirements/python.in
+```
+
+When updating a binary with a hardcoded checksum, update its platform hashes in
+`tools/install-tools.sh` too. The Go and Node image digests are in `Dockerfile`.
+Rebuild the Docker image after changing tool versions.
+
+## Experiment in a disposable copy
+
+Copy the checkout into a temporary directory before installing tools or hooks:
+
+```bash
+sandbox="$(mktemp -d)"
+cp -R ~/.pragma "$sandbox/pragma"
+git init "$sandbox/example"
+"$sandbox/pragma/install.sh" --agent "$sandbox/example"
+```
+
+The installer writes tools inside the copied Pragma checkout and hooks inside
+`example`. Rust component installation uses your existing rustup installation.
+Use Docker mode if you need an isolated Rust toolchain.
+
+## Run the checks
+
+The native checks need Git, Go 1.26+, and npm with a supported Node version.
+Install the tools used by the test fixtures before running them:
+
+```bash
+PRAGMA_INSTALL_ONLY_TOOLS="prek kingfisher goimports golangci-lint prettier shfmt shellcheck hadolint yamllint" \
+  ./tools/install-tools.sh --agent
+./tools/check.sh
+```
+
+These checks exercise real commits and pushes against a temporary local Git
+remote. They verify Go and shell formatting, lint rejection, secret rejection,
+and passing and failing Go and npm pre-push tests. Docker wrapper tests use a
+stub daemon.
+
+To build the image and repeat the real Git-hook checks with Docker-backed tools,
+run this with access to a Docker daemon:
+
+```bash
+./tools/check.sh --docker
+```
 
 ## Repo Structure
 
@@ -254,5 +367,5 @@ pragma/
 ├── tools/
 │   ├── docker-run.sh    # Runs tools inside the Docker image
 │   └── install-tools.sh # Auto-install missing tools
-└── .gitleaks.toml       # Default gitleaks config
+└── kingfisher.yaml       # Default Kingfisher config
 ```

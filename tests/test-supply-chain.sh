@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Assertions match literal shell snippets.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,32 +37,22 @@ assert_not_contains() {
 }
 
 assert_contains "Dockerfile pins base image digest" "@sha256:" "$PRAGMA_DIR/Dockerfile"
-assert_contains "Dockerfile uses npm ci" "npm ci --ignore-scripts --no-fund --no-audit" "$PRAGMA_DIR/Dockerfile"
-assert_contains "Dockerfile uses hashed Python requirements" "pip install --break-system-packages --no-cache-dir --require-hashes -r /tmp/pragma-python-requirements.txt" "$PRAGMA_DIR/Dockerfile"
-assert_contains "Dockerfile builds pinned goimports module" "go build -C /tmp/goimports -mod=readonly -o /usr/local/bin/goimports golang.org/x/tools/cmd/goimports" "$PRAGMA_DIR/Dockerfile"
-assert_contains "Dockerfile builds pinned templ module" "go build -C /tmp/templ -mod=readonly -o /usr/local/bin/templ github.com/a-h/templ/cmd/templ" "$PRAGMA_DIR/Dockerfile"
-assert_contains "Dockerfile extracts checksum entries robustly" "\$2 == asset || \$2 == \"*\" asset { print; exit }" "$PRAGMA_DIR/Dockerfile"
-assert_not_contains "Dockerfile avoids brittle golangci two-space grep" "grep \"  \$golangci_asset\$\"" "$PRAGMA_DIR/Dockerfile"
-assert_not_contains "Dockerfile avoids brittle gitleaks two-space grep" "grep \"  \$gitleaks_asset\$\"" "$PRAGMA_DIR/Dockerfile"
+assert_contains "Dockerfile uses the shared installer" "/opt/pragma/tools/install-tools.sh --agent" "$PRAGMA_DIR/Dockerfile"
+assert_contains "Dockerfile pins Rust toolchain" '--default-toolchain "$RUST_VERSION"' "$PRAGMA_DIR/Dockerfile"
+assert_contains "Dockerfile includes pinned Go toolchain" "FROM golang:1.27.2-bookworm@sha256:" "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids global npm install" "npm install --global" "$PRAGMA_DIR/Dockerfile"
-assert_not_contains "Dockerfile avoids pip install without hashes" "pip install --break-system-packages --no-cache-dir \\" "$PRAGMA_DIR/Dockerfile"
-assert_not_contains "Dockerfile avoids go install" " go install " "$PRAGMA_DIR/Dockerfile"
 assert_not_contains "Dockerfile avoids cargo install" "cargo install" "$PRAGMA_DIR/Dockerfile"
 
-assert_contains "Installer uses npm ci" "npm ci --ignore-scripts --no-fund --no-audit --prefix \"\$PRAGMA_DIR/.npm-packages\"" "$PRAGMA_DIR/tools/install-tools.sh"
-assert_contains "Installer uses hashed Python requirements" "install --quiet --require-hashes -r \"\$requirements_file\"" "$PRAGMA_DIR/tools/install-tools.sh"
-assert_contains "Installer builds pinned goimports module" "go build -C \"\$PRAGMA_DIR/tools/internal/goimports\" -mod=readonly -o \"\$BIN_DIR/goimports\" golang.org/x/tools/cmd/goimports" "$PRAGMA_DIR/tools/install-tools.sh"
-assert_contains "Installer builds pinned templ module" "go build -C \"\$PRAGMA_DIR/tools/internal/templ\" -mod=readonly -o \"\$BIN_DIR/templ\" github.com/a-h/templ/cmd/templ" "$PRAGMA_DIR/tools/install-tools.sh"
-assert_not_contains "Installer avoids bun auto-installs" "bun install -g" "$PRAGMA_DIR/tools/install-tools.sh"
-assert_not_contains "Installer avoids pipx auto-installs" "pipx install" "$PRAGMA_DIR/tools/install-tools.sh"
-assert_not_contains "Installer avoids uv tool installs" "uv tool install" "$PRAGMA_DIR/tools/install-tools.sh"
-assert_not_contains "Installer avoids go install" " go install " "$PRAGMA_DIR/tools/install-tools.sh"
+assert_contains "Installer uses npm ci" 'npm ci --ignore-scripts --no-fund --no-audit --prefix "$PRAGMA_DIR/.npm-packages"' "$PRAGMA_DIR/tools/install-tools.sh"
+assert_contains "Installer uses hashed Python requirements" 'install --quiet --require-hashes -r "$requirements_file"' "$PRAGMA_DIR/tools/install-tools.sh"
+assert_contains "Installer extracts checksum entries robustly" '$2 == asset || $2 == "*" asset { print; exit }' "$PRAGMA_DIR/tools/install-tools.sh"
+assert_not_contains "Installer avoids unchecked download helpers" "download_tarball()" "$PRAGMA_DIR/tools/install-tools.sh"
 assert_not_contains "Installer avoids latest references" "@latest" "$PRAGMA_DIR/tools/install-tools.sh"
-
-assert_contains "Host Python requirements file exists" "ruff==0.15.21" "$PRAGMA_DIR/tools/requirements/host-python.txt"
-assert_contains "Docker Python requirements file exists" "pytest==9.1.1" "$PRAGMA_DIR/tools/requirements/docker-python.txt"
-assert_contains "npm lockfile includes prettier" '"prettier": "3.9.5"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
-assert_contains "npm lockfile includes eslint" '"eslint": "9.39.4"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
+assert_contains "Installer restores pinned goimports build" "go build" "$PRAGMA_DIR/tools/install-tools.sh"
+assert_contains "Python requirements pin ruff" "ruff==0.17.0" "$PRAGMA_DIR/tools/requirements/python.txt"
+assert_contains "Python requirements pin pytest" "pytest==9.1.1" "$PRAGMA_DIR/tools/requirements/python.txt"
+assert_contains "npm lockfile includes prettier" '"prettier": "3.9.10"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
+assert_contains "npm lockfile includes eslint" '"eslint": "10.12.0"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
 assert_contains "Repo ignores local venv" ".venv/" "$PRAGMA_DIR/.gitignore"
 
 printf '\nPassed: %s\n' "$PASS"

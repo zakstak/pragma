@@ -45,22 +45,8 @@ mkdir -p "$bin_dir" "$repo_dir/src"
 cat >"$bin_dir/golangci-lint" <<'EOF'
 #!/usr/bin/env bash
 if [[ "$1" == "version" ]]; then
-  if [[ "${2:-}" == "--format" && "${3:-}" == "short" ]]; then
-    printf '%s\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
-    exit 0
-  fi
-
-  if [[ "${2:-}" == "--short" ]]; then
-    printf '%s\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
-    exit 0
-  fi
-
-  printf 'golangci-lint has version %s built with go1.25.0 from test\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
-  exit 0
-fi
-
-if [[ "$1" == "--version" ]]; then
-  printf 'golangci-lint has version %s built with go1.25.0 from test\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
+  [[ "${2:-}" == "--short" ]] || exit 2
+  printf '%s\n' "${TEST_GOLANGCI_VERSION:-v2.14.0}"
   exit 0
 fi
 
@@ -68,6 +54,15 @@ printf '%s\n' "$PWD" >"$TEST_CAPTURE_DIR/golangci.pwd"
 printf '%s\n' "$*" >"$TEST_CAPTURE_DIR/golangci.args"
 EOF
 chmod +x "$bin_dir/golangci-lint"
+
+cat >"$bin_dir/go" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >"$TEST_CAPTURE_DIR/go.args"
+EOF
+chmod +x "$bin_dir/go"
+
+git init -q "$repo_dir"
+git -C "$repo_dir" -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m fixture
 
 cat >"$bin_dir/cargo" <<'EOF'
 #!/usr/bin/env bash
@@ -98,29 +93,35 @@ assert_contains "Go lint uses pragma default config" "--config $PRAGMA_DIR/.gola
 assert_contains "Go lint scopes to new changes" "--new-from-rev=HEAD" "$go_args"
 assert_contains "Go lint does not autofix" "--fix=false" "$go_args"
 
+unborn_repo="$tmp_dir/unborn"
+git init -q "$unborn_repo"
+printf 'package main\nfunc main() {}\n' >"$unborn_repo/main.go"
 (
-  cd "$repo_dir"
-  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v1.64.8" \
+  cd "$unborn_repo"
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" \
     bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
 )
+assert_not_contains "First commit lint does not reference nonexistent HEAD" "--new-from-rev" "$(<"$tmp_dir/golangci.args")"
 
-go_v1_args="$(<"$tmp_dir/golangci.args")"
-assert_not_contains "Go lint skips bundled config for golangci-lint v1" "--config $PRAGMA_DIR/.golangci.yml" "$go_v1_args"
+rm "$tmp_dir/golangci.args"
+set +e
+old_output="$(cd "$repo_dir" && PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION=v1.64.8 bash "$PRAGMA_DIR/lib/lint.sh" main.go 2>&1)"
+old_status=$?
+set -e
+assert_contains "Old linter reports the v2 requirement" "golangci-lint v2 is required" "$old_output"
+if [[ $old_status -ne 0 && ! -f "$tmp_dir/golangci.args" && ! -f "$tmp_dir/go.args" ]]; then
+  printf 'PASS: v1 is rejected without linting or a go vet fallback\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL: v1 must be rejected without a fallback\n'
+  FAIL=$((FAIL + 1))
+fi
 
 ln -s "$PRAGMA_DIR/.golangci.yml" "$repo_dir/.golangci.yml"
 
 (
   cd "$repo_dir"
-  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v1.64.8" \
-    bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
-)
-
-self_v1_args="$(<"$tmp_dir/golangci.args")"
-assert_not_contains "Repo symlink to pragma config is skipped for golangci-lint v1" "--config .golangci.yml" "$self_v1_args"
-
-(
-  cd "$repo_dir"
-  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v2.3.0" \
+  PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" TEST_CAPTURE_DIR="$tmp_dir" TEST_GOLANGCI_VERSION="v2.14.0" \
     bash "$PRAGMA_DIR/lib/lint.sh" main.go >/dev/null 2>&1
 )
 

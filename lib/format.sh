@@ -85,11 +85,9 @@ format_go() {
   if has_tool goimports; then
     log_info "Formatting Go files..."
     pragma_run "goimports" "fmt" 0 "" "$FORMAT_RERUN" "go formatting failed" goimports -w "${go_files[@]}" || return 1
-    git add -- "${go_files[@]}"
   elif has_tool gofmt; then
     log_info "Formatting Go files (gofmt)..."
     pragma_run "gofmt" "fmt" 0 "" "$FORMAT_RERUN" "go formatting failed" gofmt -w "${go_files[@]}" || return 1
-    git add -- "${go_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}goimports${RESET} or ${BOLD}gofmt${RESET} (go formatter)"
     pragma_add_failure "goimports" "tool" 0 "" "$FORMAT_RERUN" "missing tool: goimports or gofmt" "" 1
@@ -147,24 +145,28 @@ format_rust() {
           indexed_map_set rust_file_paths_after rust_file_hashes_after "$dirty_file" "$file_hash"
         done < <(git ls-files -z --cached --others --exclude-standard -- '*.rs')
 
-        for dirty_file in "${rust_file_paths_after[@]}"; do
-          if ! indexed_map_get rust_file_paths_before rust_file_hashes_before "$dirty_file" before_hash; then
-            cargo_extra_files+=("$dirty_file")
-            continue
-          fi
+        if [[ ${#rust_file_paths_after[@]} -gt 0 ]]; then
+          for dirty_file in "${rust_file_paths_after[@]}"; do
+            if ! indexed_map_get rust_file_paths_before rust_file_hashes_before "$dirty_file" before_hash; then
+              cargo_extra_files+=("$dirty_file")
+              continue
+            fi
 
-          indexed_map_get rust_file_paths_after rust_file_hashes_after "$dirty_file" after_hash || continue
+            indexed_map_get rust_file_paths_after rust_file_hashes_after "$dirty_file" after_hash || continue
 
-          if [[ "$before_hash" != "$after_hash" ]]; then
-            cargo_extra_files+=("$dirty_file")
-          fi
-        done
+            if [[ "$before_hash" != "$after_hash" ]]; then
+              cargo_extra_files+=("$dirty_file")
+            fi
+          done
+        fi
 
-        for dirty_file in "${rust_file_paths_before[@]}"; do
-          if ! indexed_map_get rust_file_paths_after rust_file_hashes_after "$dirty_file" after_hash; then
-            cargo_extra_files+=("$dirty_file")
-          fi
-        done
+        if [[ ${#rust_file_paths_before[@]} -gt 0 ]]; then
+          for dirty_file in "${rust_file_paths_before[@]}"; do
+            if ! indexed_map_get rust_file_paths_after rust_file_hashes_after "$dirty_file" after_hash; then
+              cargo_extra_files+=("$dirty_file")
+            fi
+          done
+        fi
 
         if [[ ${#cargo_extra_files[@]} -gt 0 ]]; then
           pragma_add_failure "cargo" "fmt" 0 "" "$FORMAT_RERUN" "cargo fmt touched additional files" "$(printf '%s\n' "${cargo_extra_files[@]}")" 1
@@ -178,7 +180,6 @@ format_rust() {
         return 1
       fi
     fi
-    git add -- "${rs_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}rustfmt${RESET} (rust formatter)"
     pragma_add_failure "rustfmt" "tool" 0 "" "$FORMAT_RERUN" "missing tool: rustfmt" "" 1
@@ -195,7 +196,6 @@ format_typescript() {
   if has_tool prettier; then
     log_info "Formatting TypeScript/JS files..."
     pragma_run "prettier" "fmt" 0 "" "$FORMAT_RERUN" "typescript formatting failed" prettier --write "${ts_files[@]}" || return 1
-    git add -- "${ts_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}prettier${RESET} (typescript/js formatter)"
     pragma_add_failure "prettier" "tool" 0 "" "$FORMAT_RERUN" "missing tool: prettier" "" 1
@@ -229,27 +229,9 @@ format_html() {
   if has_tool prettier; then
     log_info "Formatting HTML files..."
     pragma_run "prettier" "fmt" 0 "" "$FORMAT_RERUN" "html formatting failed" prettier --write "${plain_html_files[@]}" || return 1
-    git add -- "${plain_html_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}prettier${RESET} (html formatter)"
     pragma_add_failure "prettier" "tool" 0 "" "$FORMAT_RERUN" "missing tool: prettier" "" 1
-    return 1
-  fi
-}
-
-format_templ() {
-  local -a files=("$@")
-  local -a templ_files=()
-  filter_by_ext templ_files templ -- "${files[@]}"
-  [[ ${#templ_files[@]} -eq 0 ]] && return 0
-
-  if has_tool templ; then
-    log_info "Formatting templ files..."
-    pragma_run "templ" "fmt" 0 "" "$FORMAT_RERUN" "templ formatting failed" templ fmt "${templ_files[@]}" || return 1
-    git add -- "${templ_files[@]}"
-  else
-    log_warn "Missing tool: ${BOLD}templ${RESET} (templ formatter)"
-    pragma_add_failure "templ" "tool" 0 "" "$FORMAT_RERUN" "missing tool: templ" "" 1
     return 1
   fi
 }
@@ -263,7 +245,6 @@ format_yaml() {
   if has_tool prettier; then
     log_info "Formatting YAML files..."
     pragma_run "prettier" "fmt" 0 "" "$FORMAT_RERUN" "yaml formatting failed" prettier --write "${yaml_files[@]}" || return 1
-    git add -- "${yaml_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}prettier${RESET} (yaml formatter)"
     pragma_add_failure "prettier" "tool" 0 "" "$FORMAT_RERUN" "missing tool: prettier" "" 1
@@ -280,7 +261,6 @@ format_shell() {
   if has_tool shfmt; then
     log_info "Formatting Shell files..."
     pragma_run "shfmt" "fmt" 0 "" "$FORMAT_RERUN" "shell formatting failed" shfmt -w -i 2 -ci "${sh_files[@]}" || return 1
-    git add -- "${sh_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}shfmt${RESET} (shell formatter)"
     pragma_add_failure "shfmt" "tool" 0 "" "$FORMAT_RERUN" "missing tool: shfmt" "" 1
@@ -297,7 +277,6 @@ format_markdown() {
   if has_tool prettier; then
     log_info "Formatting Markdown files..."
     pragma_run "prettier" "fmt" 0 "" "$FORMAT_RERUN" "markdown formatting failed" prettier --write --prose-wrap always "${md_files[@]}" || return 1
-    git add -- "${md_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}prettier${RESET} (markdown formatter)"
     pragma_add_failure "prettier" "tool" 0 "" "$FORMAT_RERUN" "missing tool: prettier" "" 1
@@ -314,7 +293,6 @@ format_toml() {
   if has_tool taplo; then
     log_info "Formatting TOML files..."
     pragma_run "taplo" "fmt" 0 "" "$FORMAT_RERUN" "toml formatting failed" taplo fmt "${toml_files[@]}" || return 1
-    git add -- "${toml_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}taplo${RESET} (toml formatter)"
     pragma_add_failure "taplo" "tool" 0 "" "$FORMAT_RERUN" "missing tool: taplo" "" 1
@@ -331,7 +309,6 @@ format_json() {
   if has_tool prettier; then
     log_info "Formatting JSON files..."
     pragma_run "prettier" "fmt" 0 "" "$FORMAT_RERUN" "json formatting failed" prettier --write "${json_files[@]}" || return 1
-    git add -- "${json_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}prettier${RESET} (json formatter)"
     pragma_add_failure "prettier" "tool" 0 "" "$FORMAT_RERUN" "missing tool: prettier" "" 1
@@ -348,7 +325,6 @@ format_python() {
   if has_tool ruff; then
     log_info "Formatting Python files..."
     pragma_run "ruff" "fmt" 0 "" "$FORMAT_RERUN" "python formatting failed" ruff format "${py_files[@]}" || return 1
-    git add -- "${py_files[@]}"
   else
     log_warn "Missing tool: ${BOLD}ruff${RESET} (python formatter)"
     pragma_add_failure "ruff" "tool" 0 "" "$FORMAT_RERUN" "missing tool: ruff" "" 1
@@ -358,13 +334,12 @@ format_python() {
 
 # ─── Dispatcher ───────────────────────────────────────────────────────────────
 
-# Docker and gitleaks have no formatting step — intentionally omitted.
+# Docker and kingfisher have no formatting step — intentionally omitted.
 
 FORMATTERS=(
   "go:format_go"
   "rust:format_rust"
   "typescript:format_typescript"
-  "templ:format_templ"
   "html:format_html"
   "yaml:format_yaml"
   "shell:format_shell"

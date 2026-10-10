@@ -73,13 +73,13 @@ assert_contains "TypeScript files detected" "typescript" "$result"
 
 # templ
 result=$(detect_from_files views/page.templ)
-assert_contains "templ files detected" "templ" "$result"
+assert_not_contains "Go templ files are ignored" "templ" "$result"
 
 # Mixed
 result=$(detect_from_files main.go src/lib.rs views/page.templ index.html config.yaml Dockerfile setup.sh README.md config.toml data.json app.py)
 assert_contains "Mixed: go" "go" "$result"
 assert_contains "Mixed: rust" "rust" "$result"
-assert_contains "Mixed: templ" "templ" "$result"
+assert_not_contains "Mixed: templ ignored" "templ" "$result"
 assert_contains "Mixed: html" "html" "$result"
 assert_contains "Mixed: yaml" "yaml" "$result"
 assert_contains "Mixed: docker" "docker" "$result"
@@ -152,7 +152,7 @@ result=$(cd "$SCRIPT_DIR/.." && detect_from_repo)
 assert_contains "Pragma repo: shell" "shell" "$result"
 assert_contains "Pragma repo: markdown" "markdown" "$result"
 assert_contains "Pragma repo: toml" "toml" "$result"
-assert_contains "Pragma repo: yaml" "yaml" "$result"
+assert_contains "Pragma ships v2 Go YAML config" "yaml" "$result"
 
 portable_repo="$tmp_dir/portable-detect"
 mkdir -p "$portable_repo/src/level2" "$portable_repo/src/level2/level3" "$portable_repo/node_modules/pkg" "$portable_repo/frontend/node_modules/pkg" "$portable_repo/.git/info"
@@ -165,7 +165,7 @@ touch "$portable_repo/.git/info/ignored.yaml"
 
 result=$(cd "$portable_repo" && detect_from_repo)
 assert_contains "Portable repo scan includes files within depth 3" "python" "$result"
-assert_contains "Portable repo scan includes templ files within depth 3" "templ" "$result"
+assert_not_contains "Portable repo scan ignores Go templ files" "templ" "$result"
 assert_not_contains "Portable repo scan excludes files deeper than depth 3" "shell" "$result"
 assert_not_contains "Portable repo scan excludes node_modules matches" "json" "$result"
 assert_not_contains "Portable repo scan excludes nested node_modules matches" "json" "$result"
