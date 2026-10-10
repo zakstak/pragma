@@ -68,12 +68,6 @@ for tool in cat chmod dirname find grep mkdir sh sort tr uname; do
   ln -s "$(command -v "$tool")" "$runtime_path/$tool"
 done
 
-cat >"$repo_dir/go.mod" <<'EOF'
-module example.com/demo
-
-go 1.25.0
-EOF
-
 cat >"$repo_dir/Cargo.toml" <<'EOF'
 [package]
 name = "demo"
@@ -81,13 +75,7 @@ version = "0.1.0"
 edition = "2021"
 EOF
 
-cat >"$repo_dir/page.templ" <<'EOF'
-templ Page() {
-  <div>Hello</div>
-}
-EOF
-
-for tool in prek gitleaks rustfmt goimports prettier templ; do
+for tool in prek kingfisher rustfmt prettier; do
   cat >"$bin_dir/$tool" <<'EOF'
 #!/bin/sh
 exit 0
@@ -111,56 +99,9 @@ exit 0
 EOF
 chmod +x "$bin_dir/cargo"
 
-cat >"$bin_dir/golangci-lint" <<'EOF'
-#!/bin/sh
-if [ "$1" = "version" ] && [ "$2" = "--format" ] && [ "$3" = "short" ]; then
-  printf '%s\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
-  exit 0
-fi
-
-if [ "$1" = "version" ] && [ "$2" = "--short" ]; then
-  printf '%s\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
-  exit 0
-fi
-
-if [ "$1" = "version" ] || [ "$1" = "--version" ]; then
-  printf 'golangci-lint has version %s built with go1.25.0 from test\n' "${TEST_GOLANGCI_VERSION:-v2.3.0}"
-  exit 0
-fi
-
-exit 0
-EOF
-chmod +x "$bin_dir/golangci-lint"
-
 present_output="$(cd "$repo_dir" && PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent 2>&1)"
 assert_contains "cargo clippy subcommand satisfies clippy requirement" "clippy is available" "$present_output"
 assert_not_contains "available cargo clippy does not trigger reinstall" "Adding clippy via rustup" "$present_output"
-assert_contains "golangci-lint v2 satisfies Go requirement" "golangci-lint is available" "$present_output"
-assert_contains "templ satisfies templ requirement" "templ is available" "$present_output"
-
-rm "$bin_dir/golangci-lint"
-
-cat >"$bin_dir/golangci-lint" <<'EOF'
-#!/bin/sh
-if [ "$1" = "version" ] && [ "$2" = "--format" ] && [ "$3" = "short" ]; then
-  printf '%s\n' "v1.64.8"
-  exit 0
-fi
-
-if [ "$1" = "version" ] && [ "$2" = "--short" ]; then
-  printf '%s\n' "v1.64.8"
-  exit 0
-fi
-
-if [ "$1" = "version" ] || [ "$1" = "--version" ]; then
-  printf 'golangci-lint has version v1.64.8 built with go1.25.0 from test\n'
-  exit 0
-fi
-
-exit 0
-EOF
-chmod +x "$bin_dir/golangci-lint"
-
 cat >"$bin_dir/rustup" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*"
@@ -180,25 +121,9 @@ exit 0
 EOF
 chmod +x "$bin_dir/clippy"
 
-cat >"$bin_dir/go" <<'EOF'
-#!/bin/sh
-printf '%s\n' "$*" >"$TEST_CAPTURE_DIR/go.args"
-exit 0
-EOF
-chmod +x "$bin_dir/go"
-
-rm -f "$bin_dir/templ"
-
 missing_output="$(cd "$repo_dir" && PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_CARGO_HAS_CLIPPY=0 TEST_CAPTURE_DIR="$tmp_dir" PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent 2>&1)"
 assert_contains "standalone clippy without cargo subcommand is reported missing" "clippy is missing" "$missing_output"
 assert_contains "missing cargo clippy subcommand installs via rustup" "Adding clippy via rustup" "$missing_output"
-assert_contains "golangci-lint v1 is accepted" "golangci-lint is available" "$missing_output"
-assert_not_contains "golangci-lint v1 does not trigger reinstall" "Installed golangci-lint" "$missing_output"
-assert_contains "missing templ installs via pinned module source" "Installing templ via pinned module source..." "$missing_output"
-
-templ_go_args="$(<"$tmp_dir/go.args")"
-assert_contains "templ install builds pinned module" "build -C $PRAGMA_DIR/tools/internal/templ -mod=readonly -o $PRAGMA_DIR/bin/templ github.com/a-h/templ/cmd/templ" "$templ_go_args"
-
 cat >"$bin_dir/npm" <<'EOF'
 #!/bin/sh
 exit 0
@@ -207,14 +132,14 @@ chmod +x "$bin_dir/npm"
 
 cat >"$bin_dir/node" <<'EOF'
 #!/bin/sh
-printf '%s\n' "${TEST_NODE_VERSION:-v18.18.0}"
+printf '%s\n' "${TEST_NODE_VERSION:-v24.0.0}"
 EOF
 chmod +x "$bin_dir/node"
 
-capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=eslint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v18.17.1 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
-assert_contains "unsupported Node version skips eslint install" "eslint requires npm and Node 18.18+, 20.9+, or 21.1+" "$CAPTURED_OUTPUT"
+capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=eslint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v20.18.0 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
+assert_contains "unsupported Node version skips eslint install" "eslint requires npm and Node 20.19+, 22.13+, or 24+" "$CAPTURED_OUTPUT"
 
-capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=eslint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v18.18.0 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
+capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=eslint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v24.0.0 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
 if [[ $CAPTURED_STATUS -eq 0 && -x "$PRAGMA_DIR/bin/eslint" ]]; then
   printf 'PASS: supported Node version installs eslint wrapper\n'
   PASS=$((PASS + 1))
@@ -223,6 +148,50 @@ else
   FAIL=$((FAIL + 1))
 fi
 rm -f "$PRAGMA_DIR/bin/eslint"
+
+cat >"$bin_dir/golangci-lint" <<'EOF'
+#!/bin/sh
+[ "$1" = version ] && [ "$2" = --short ] || exit 2
+printf '%s\n' "${TEST_GOLANGCI_VERSION:-2.14.0}"
+EOF
+chmod +x "$bin_dir/golangci-lint"
+capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=golangci-lint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
+assert_contains "Current golangci-lint satisfies installer requirement" "golangci-lint is available" "$CAPTURED_OUTPUT"
+cat >"$bin_dir/curl" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+capture_command_result env TEST_GOLANGCI_VERSION=1.64.8 PRAGMA_INSTALL_ONLY_TOOLS=golangci-lint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
+assert_contains "Old golangci-lint triggers installation" "golangci-lint is missing" "$CAPTURED_OUTPUT"
+assert_not_contains "Old golangci-lint does not satisfy requirement" "golangci-lint is available" "$CAPTURED_OUTPUT"
+
+# A corrupt download must fail before replacing the installed scanner.
+checksum_repo="$tmp_dir/pragma-checksum"
+mkdir -p "$checksum_repo/tools" "$checksum_repo/lib" "$checksum_repo/bin"
+cp "$PRAGMA_DIR/tools/install-tools.sh" "$PRAGMA_DIR/tools/versions.sh" "$checksum_repo/tools/"
+cp "$PRAGMA_DIR/lib/common.sh" "$PRAGMA_DIR/lib/detect.sh" "$checksum_repo/lib/"
+printf '#!/bin/sh\nprintf "existing-scanner\\n"\n' >"$checksum_repo/bin/kingfisher"
+chmod +x "$checksum_repo/bin/kingfisher"
+cat >"$bin_dir/curl" <<'EOF'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -o ]; then
+    printf 'corrupted archive\n' >"$2"
+    exit 0
+  fi
+  shift
+done
+exit 1
+EOF
+capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=kingfisher PATH="$bin_dir:$PATH" /bin/bash "$checksum_repo/tools/install-tools.sh" --agent --update
+if [[ $CAPTURED_STATUS -ne 0 && "$("$checksum_repo/bin/kingfisher")" == existing-scanner ]]; then
+  printf 'PASS: corrupt Kingfisher downloads preserve the installed binary\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL: corrupt Kingfisher downloads must fail without replacing the binary\n'
+  FAIL=$((FAIL + 1))
+fi
+assert_contains "Corrupt Kingfisher downloads explain checksum failure" "Checksum mismatch" "$CAPTURED_OUTPUT"
 
 unsupported_repo="$tmp_dir/pragma-unsupported"
 copy_tree "$PRAGMA_DIR" "$unsupported_repo"

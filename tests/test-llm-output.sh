@@ -195,35 +195,6 @@ capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH"
 assert_status "Plain HTML still uses formatter and fails" 1 "$CAPTURED_STATUS"
 assert_contains "Plain HTML formatter failure keeps html message" '"msg":"html formatting failed"' "$CAPTURED_OUTPUT"
 
-cat >"$format_repo/page.templ" <<'EOF'
-templ Page() {
-  <div>Hello</div>
-}
-EOF
-
-cat >"$bin_dir/templ" <<'EOF'
-#!/usr/bin/env bash
-printf 'templ parse error\nline 2\n'
-exit 2
-EOF
-chmod +x "$bin_dir/templ"
-
-capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" page.templ"
-assert_status "templ format failure exits non-zero" 1 "$CAPTURED_STATUS"
-assert_single_line "templ format failure stays single-line" "$CAPTURED_OUTPUT"
-assert_contains "templ format failure emits templ tool" '"tool":"templ"' "$CAPTURED_OUTPUT"
-assert_contains "templ format failure emits templ message" '"msg":"templ formatting failed"' "$CAPTURED_OUTPUT"
-
-cat >"$bin_dir/templ" <<'EOF'
-#!/usr/bin/env bash
-exit 0
-EOF
-chmod +x "$bin_dir/templ"
-
-capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" page.templ"
-assert_status "templ format success exits zero" 0 "$CAPTURED_STATUS"
-assert_empty "templ format success stays silent" "$CAPTURED_OUTPUT"
-
 cat >"$bin_dir/rustfmt" <<'EOF'
 #!/usr/bin/env bash
 printf 'rustfmt partial-file failure\n'
@@ -254,6 +225,14 @@ git -C "$format_repo" add index.js src/lib.rs src/extra.rs
 capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$format_repo\" && \"$PRAGMA_DIR/lib/format.sh\" src/lib.rs"
 assert_status "Rust fallback success exits zero" 0 "$CAPTURED_STATUS"
 assert_empty "Rust fallback success stays silent" "$CAPTURED_OUTPUT"
+
+solo_rust_repo="$tmp_dir/solo-rust-repo"
+mkdir -p "$solo_rust_repo/src"
+git init -q "$solo_rust_repo"
+cp "$format_repo/src/lib.rs" "$solo_rust_repo/src/lib.rs"
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$solo_rust_repo\" && \"$PRAGMA_DIR/lib/format.sh\" src/lib.rs"
+assert_status "Rust fallback with no other Rust files succeeds" 0 "$CAPTURED_STATUS"
+assert_empty "Rust fallback with empty snapshots stays silent" "$CAPTURED_OUTPUT"
 
 cat >"$bin_dir/cargo" <<'EOF'
 #!/usr/bin/env bash
@@ -328,19 +307,33 @@ secrets_repo="$tmp_dir/secrets-repo"
 mkdir -p "$secrets_repo"
 git init -q "$secrets_repo"
 
-cat >"$bin_dir/gitleaks" <<'EOF'
+cat >"$bin_dir/kingfisher" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >"$TEST_KINGFISHER_ARGS"
 printf 'secret found\npath=.env\n'
-exit 7
+exit 200
 EOF
-chmod +x "$bin_dir/gitleaks"
+chmod +x "$bin_dir/kingfisher"
 
-capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$secrets_repo\" && \"$PRAGMA_DIR/lib/secrets.sh\""
+capture_command_result env TEST_KINGFISHER_ARGS="$tmp_dir/kingfisher.args" PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$secrets_repo\" && \"$PRAGMA_DIR/lib/secrets.sh\""
 assert_status "Secret scan failure exits non-zero" 1 "$CAPTURED_STATUS"
 assert_single_line "Secret scan failure stays single-line" "$CAPTURED_OUTPUT"
 assert_contains "Secret scan emits secrets step" '"step":"secrets"' "$CAPTURED_OUTPUT"
 assert_contains "Secret scan emits secret class" '"cls":"secret"' "$CAPTURED_OUTPUT"
 assert_contains "Secret scan keeps output tail" '"tail":"secret found\npath=.env"' "$CAPTURED_OUTPUT"
+
+secret_args="$(<"$tmp_dir/kingfisher.args")"
+assert_contains "Secret scan uses staged changes only" "scan . --staged" "$secret_args"
+assert_contains "Secret scan disables credential validation" "--no-validate" "$secret_args"
+assert_contains "Secret scan disables update checks" "--no-update-check" "$secret_args"
+assert_contains "Secret scan redacts findings" "--redact" "$secret_args"
+assert_contains "Secret scan bounds worker count" "--jobs 2" "$secret_args"
+assert_contains "Secret scan loads Pragma defaults" "--config $PRAGMA_DIR/kingfisher.yaml" "$secret_args"
+assert_contains "Secret scan preserves Kingfisher finding exit code" '"code":200' "$CAPTURED_OUTPUT"
+
+printf 'filters: {}\n' >"$secrets_repo/kingfisher.yaml"
+capture_command_result env TEST_KINGFISHER_ARGS="$tmp_dir/kingfisher.args" PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$secrets_repo\" && \"$PRAGMA_DIR/lib/secrets.sh\""
+assert_contains "Secret scan prefers project configuration" "--config kingfisher.yaml" "$(<"$tmp_dir/kingfisher.args")"
 
 printf '\nPassed: %s\n' "$PASS"
 printf 'Failed: %s\n' "$FAIL"

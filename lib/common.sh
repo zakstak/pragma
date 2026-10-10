@@ -84,38 +84,12 @@ require_tool() {
   return 0
 }
 
-golangci_version_text() {
-  if ! has_tool golangci-lint; then
-    return 1
-  fi
-
-  local output=""
-
-  output="$(golangci-lint version --format short 2>/dev/null || true)"
-  [[ -n "$output" ]] || output="$(golangci-lint version --short 2>/dev/null || true)"
-  [[ -n "$output" ]] || output="$(golangci-lint version 2>/dev/null || true)"
-  [[ -n "$output" ]] || output="$(golangci-lint --version 2>/dev/null || true)"
-  [[ -n "$output" ]] || return 1
-
-  printf '%s\n' "$output"
-}
-
-golangci_major_version() {
-  local output
-  output="$(golangci_version_text)" || return 1
-
-  if [[ "$output" =~ (^|[^[:alnum:]])v?([0-9]+)(\.[0-9]+){0,2}([^[:alnum:]]|$) ]]; then
-    printf '%s\n' "${BASH_REMATCH[2]}"
-    return 0
-  fi
-
-  return 1
-}
-
+# Only the v2 CLI is supported. Older versions must be upgraded.
 golangci_is_v2() {
-  local major
-  major="$(golangci_major_version)" || return 1
-  [[ "$major" -ge 2 ]]
+  has_tool golangci-lint || return 1
+  local version
+  version="$(golangci-lint version --short 2>/dev/null)" || return 1
+  [[ "$version" == v2.* || "$version" == 2.* ]]
 }
 
 # ─── File filtering ──────────────────────────────────────────────────────────
@@ -188,7 +162,9 @@ pragma_dir() {
 if [[ "${PRAGMA_SKIP_INTERNAL_BIN_PATH:-0}" != "1" && "${PRAGMA_RUNNING_IN_DOCKER:-0}" != "1" ]]; then
   pragma_prepend_path "$(pragma_dir)/bin"
 
-  if [[ -n "${PRAGMA_DOCKER_BIN_DIR:-}" ]]; then
+  if [[ "${PRAGMA_TOOL_MODE:-native}" == "docker" ]]; then
+    pragma_prepend_path "$(pragma_dir)/bin/docker"
+  elif [[ -n "${PRAGMA_DOCKER_BIN_DIR:-}" ]]; then
     pragma_prepend_path "$PRAGMA_DOCKER_BIN_DIR"
   fi
 fi

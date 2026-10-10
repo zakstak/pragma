@@ -6,7 +6,7 @@ id = "format"
 name = "format"
 entry = "./lib/format.sh"
 language = "script"
-files = '\.(go|rs|ts|tsx|js|jsx|html|htm|templ|yml|yaml|sh|md|toml|json|py)$'
+files = '\.(go|rs|ts|tsx|js|jsx|html|htm|yml|yaml|sh|md|toml|json|py)$'
 stages = ["pre-commit"]
 
 [[repos.hooks]]
@@ -18,8 +18,8 @@ files = '(\.(go|rs|ts|tsx|js|jsx|yml|yaml|sh|toml|py)$)|((^|/)([Dd]ockerfile(\.[
 stages = ["pre-commit"]
 
 [[repos.hooks]]
-id = "gitleaks"
-name = "gitleaks"
+id = "kingfisher"
+name = "kingfisher"
 entry = "./lib/secrets.sh"
 language = "script"
 pass_filenames = false
