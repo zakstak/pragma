@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRAGMA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/common.sh"
 source "$SCRIPT_DIR/detect.sh"
+pragma_enforce_thread_owner || exit 1
 
 PRAGMA_OUTPUT_FORMAT="${PRAGMA_OUTPUT_FORMAT:-gpt}"
 LINT_RERUN="./lib/lint.sh <staged-files>"

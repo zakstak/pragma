@@ -18,10 +18,10 @@ done
 
 shellcheck -e SC2329 -x -P SCRIPTDIR "${scripts[@]}"
 shfmt -d -i 2 -ci "${scripts[@]}"
-for helper in lib/*.js; do
+for helper in lib/*.js tools/*.js; do
   node --check "$helper"
 done
-oxlint --deny-warnings lib/*.js
+oxlint --deny-warnings lib/*.js tools/*.js
 
 for test_script in tests/*.sh; do
   printf '\nRunning %s\n' "$test_script"
