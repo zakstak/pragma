@@ -6,8 +6,8 @@
 
 Language-aware Git hooks for Linux and macOS, powered by
 [prek](https://github.com/j178/prek). Pre-commit formats and lints staged files
-and scans staged changes for secrets. Pre-push runs project typechecks and
-tests.
+and scans staged changes for secrets. Pre-push runs project typechecks, tests,
+and advisory ts-rust compiler comparisons.
 
 ## Install
 
@@ -42,6 +42,12 @@ installation uses release binaries and does not require Node or Go.
 Language tools use project selections first, followed by your active `PATH` and
 Pragma's pinned fallbacks. Install your project's dependencies before bootstrap.
 See [Tool selection](#tool-selection) for the supported selections.
+
+TypeScript repositories also receive Pragma's pinned ts-rust shadow compiler.
+The installer adds its own comparison hook without changing project compiler
+dependencies. Shadow checking is enabled by default. See
+[Review automatic ts-rust shadow checks](#review-automatic-ts-rust-shadow-checks)
+for outputs, supported scopes, and opt-out settings.
 
 To install hooks for Pragma itself, run `./install.sh --agent .` from this
 checkout. Self-install keeps the existing `prek.toml` unchanged and requires it
@@ -190,11 +196,49 @@ monorepo, let the root script check all packages. Pragma runs this script before
 tests on pre-push and leaves compiler versions and Effect rules to the project.
 Editor diagnostics alone do not run during a push.
 
-## Cache a ts-rust shadow check
+## Review automatic ts-rust shadow checks
 
-Install and pin [`tsc-rs`](https://github.com/pingdotgg/ts-rust) in the target
-project. Declare a shadow script that uses the same project configurations and
-compiler options as the normal typecheck. For example:
+Pragma installs a checksum-pinned
+[`tsc-rs`](https://github.com/pingdotgg/ts-rust) release for TypeScript
+repositories. The complete compiler and its standard library files stay in
+Pragma's ignored `bin/` directory. Pragma leaves project compiler dependencies
+and lockfiles unchanged.
+
+New installations include a separate `pragma-shadow` pre-push hook. It discovers
+TypeScript packages, including nested packages, and records comparisons against
+the installed Rust compiler. No shadow script or local opt-in is required. Your
+existing project checks decide whether the push succeeds. Shadow failures,
+crashes, timeouts, and unsupported configurations remain advisory findings.
+
+Direct `tsc` commands retain their input arguments and project configurations.
+Automatic comparisons disable emission and keep incremental caches in the
+receipt directory. Receipts identify checks that cover only TypeScript source
+files. Vue and Svelte template checks require their framework tools and are not
+equivalent to a plain compiler comparison. Arbitrary shell commands are not
+rewritten into compiler commands.
+
+To capture comparisons without running other project checks, run:
+
+```bash
+~/.pragma/lib/shadow.sh
+```
+
+To disable shadow installation and capture in this clone, run:
+
+```bash
+git config --local pragma.shadow false
+```
+
+`PRAGMA_SHADOW=0` disables capture for one invocation. `PRAGMA_SHADOW=1`
+overrides the local setting. Remove the local setting to restore the default:
+
+```bash
+git config --local --unset pragma.shadow
+```
+
+A project's explicit `typecheck:shadow` script overrides automatic planning. Use
+the same configurations and compiler options as its normal `typecheck`. For
+example:
 
 ```json
 {
@@ -205,29 +249,9 @@ compiler options as the normal typecheck. For example:
 }
 ```
 
-For repeated comparisons, disable incremental caching in both scripts when
-supported, or use separate compiler caches. Use separate output directories if
-your typecheck scripts emit files.
-
-Enable shadow capture for one push:
-
-```bash
-PRAGMA_SHADOW=1 git push
-```
-
-To enable it for future pushes in this clone:
-
-```bash
-git config --local pragma.shadow true
-```
-
-`PRAGMA_SHADOW=0` overrides the local setting. To run checks directly, use
-`~/.pragma/lib/test.sh --shadow` from the project. The shadow runs after the
-normal typecheck, including when the normal check fails. Only the normal check
-decides whether typechecking blocks the push. Tests run after a passing normal
-check. Pragma does not install shadow dependencies during a hook. Projects
-without a normal `typecheck` script report a skip and do not create a
-comparison.
+An explicit script owns its dependencies. Pragma does not install dependencies
+during a hook. Keep emitted files and incremental caches separate when either
+script writes output.
 
 Every enabled run retains both checks' full stdout and stderr, even when they
 succeed or agree. Each run has a unique directory under
@@ -238,8 +262,8 @@ never submits findings upstream or dumps your full environment.
 
 Each receipt contains:
 
-- `baseline.stdout.log`, `baseline.stderr.log`, `shadow.stdout.log`, and
-  `shadow.stderr.log`, with complete output and hashes recorded in metadata.
+- Complete baseline and shadow stdout/stderr logs. Each comparison's metadata
+  identifies its output files and hashes, including nested package checks.
 - `metadata.json`, with commands, script definitions, exit codes, signals,
   timestamps, timings, compiler and package versions, Pragma version and source
   hashes, host information, runtime paths, and Git HEAD, branch, status, and
@@ -260,13 +284,13 @@ since compiler versions, Effect rule versions, and script options can differ.
 Configure `--pretty false` in both scripts for consistent diagnostic parsing.
 Raw outputs remain available when a failure cannot be parsed.
 
-The shadow has a 120-second timeout. Set `PRAGMA_SHADOW_TIMEOUT_SECONDS` to a
-positive number up to 2147483.647 to change it. A timeout stops the shadow
-process group and retains its output. It does not block a passing normal check.
-Cache setup errors are reported, and the normal typecheck still runs. An
-interrupted capture can leave a receipt with `state: "running"` and incomplete
-results. Cancelling with SIGINT or SIGTERM stops the active compiler process
-group.
+Advisory baseline and shadow commands each have a 120-second timeout. Set
+`PRAGMA_SHADOW_TIMEOUT_SECONDS` to a positive number up to 2147483.647 to change
+it. A timeout stops the shadow process group and retains its output. It does not
+block a passing normal check. Cache setup errors are reported, and the normal
+typecheck still runs. An interrupted capture can leave a receipt with
+`state: "running"` and incomplete results. Cancelling with SIGINT or SIGTERM
+stops the active compiler process group.
 
 ## Update an existing install
 
@@ -431,6 +455,8 @@ pragma/
 │   ├── lint.sh          # Linter dispatch
 │   ├── secrets.sh       # Kingfisher invocation
 │   ├── test.sh          # Project typecheck and test dispatch
+│   ├── shadow.sh        # Advisory comparison hook
+│   ├── shadow-plan.js   # Supported compiler arguments
 │   └── shadow.js        # Local compiler comparison receipts
 ├── tools/
 │   ├── check.sh         # Repository checks

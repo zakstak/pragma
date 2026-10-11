@@ -97,7 +97,7 @@ detect_from_repo() {
 
   # TypeScript
   if [[ -f "tsconfig.json" || -f "package.json" ]] ||
-    repo_has_match_within_depth \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' \); then
+    repo_has_match_within_depth \( -name 'package.json' -o -name 'tsconfig*.json' -o -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' \); then
     langs+=("typescript")
   fi
 

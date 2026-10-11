@@ -451,6 +451,157 @@ WRAPPER
   fi
 }
 
+# The release is a noembed compiler: keep its standard library beside the native
+# tsc executable. Only the separately named tsc-rs wrapper enters the shared PATH.
+tsc_rs_archive_sha256() {
+  case "$OS:$ARCH_KINGFISHER" in
+    linux:x64) printf '%s\n' '43e845ada6ed26bec76b75b333063a427ed1ae972c9d3a0caee71866bddf9fe0' ;;
+    linux:arm64) printf '%s\n' '93978fe6fe60fa6e4da9722131203a65ecac6eada41e79ce786cb8d2d1b9c653' ;;
+    darwin:x64) printf '%s\n' '75c886e92db7c27d667a6ff0f9880fe6530aba087b90aec6bc82f95aa4fa7ae4' ;;
+    darwin:arm64) printf '%s\n' '3536154507d63dce06786651d28f8e37560c864231855078a262287cde4020ef' ;;
+    *) return 1 ;;
+  esac
+}
+
+tsc_rs_install_name() {
+  printf 'tsc-rs-%s-%s-%s\n' "$TSC_RS_VERSION" "$OS" "$ARCH_KINGFISHER"
+}
+
+tsc_rs_receipt() {
+  local archive_sha="$1" binary_sha="$2"
+  cat <<EOF
+{
+  "version": "$TSC_RS_VERSION",
+  "typescript_version": "$TSC_RS_TYPESCRIPT_VERSION",
+  "source_commit": "$TSC_RS_SOURCE_COMMIT",
+  "platform": "$OS-$ARCH_KINGFISHER",
+  "url": "https://github.com/pingdotgg/ts-rust/releases/download/v$TSC_RS_VERSION/$(tsc_rs_install_name).tar.gz",
+  "archive_sha256": "$archive_sha",
+  "binary_sha256": "$binary_sha"
+}
+EOF
+}
+
+tsc_rs_wrapper() {
+  cat <<'WRAPPER'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WRAPPER
+  # shellcheck disable=SC2016 # Resolve the installed wrapper when invoked.
+  printf 'exec "$SCRIPT_DIR/%s/tsc" "$@"\n' "$(tsc_rs_install_name)"
+}
+
+has_pinned_tsc_rs() {
+  local installed archive_sha binary_sha receipt
+  installed="$NATIVE_BIN_DIR/$(tsc_rs_install_name)"
+  [[ -x "$NATIVE_BIN_DIR/tsc-rs" && -x "$installed/tsc" && -f "$installed/lib.es5.d.ts" &&
+    -f "$installed/receipt.json" && -f "$installed/files.sha256" &&
+    -f "$NATIVE_BIN_DIR/tsc-rs.receipt.json" ]] || return 1
+  archive_sha="$(tsc_rs_archive_sha256)" || return 1
+  binary_sha="$(file_sha256 "$installed/tsc")" || return 1
+  receipt="$(tsc_rs_receipt "$archive_sha" "$binary_sha")" || return 1
+  [[ "$(cat "$installed/receipt.json")" == "$receipt" ]] || return 1
+  [[ "$(cat "$NATIVE_BIN_DIR/tsc-rs.receipt.json")" == "$receipt" ]] || return 1
+  [[ "$(cat "$NATIVE_BIN_DIR/tsc-rs")" == "$(tsc_rs_wrapper)" ]] || return 1
+  verify_checksum_file "$installed/files.sha256" || return 1
+  [[ "$("$NATIVE_BIN_DIR/tsc-rs" --version 2>/dev/null)" == "Version $TSC_RS_TYPESCRIPT_VERSION" ]]
+}
+
+install_tsc_rs() (
+  local name asset_name archive_sha url stage candidate installed binary_sha
+  require_commands curl tar awk cat chmod mv mkdir mktemp rm find sort cp ln || return 1
+  name="$(tsc_rs_install_name)"
+  asset_name="$name.tar.gz"
+  archive_sha="$(tsc_rs_archive_sha256)" || return 1
+  url="https://github.com/pingdotgg/ts-rust/releases/download/v$TSC_RS_VERSION/$asset_name"
+  # Stage on the destination filesystem so publication uses rename, and keep the
+  # previous compiler until download, extraction and the version check succeed.
+  stage="$(mktemp -d "$NATIVE_BIN_DIR/.tsc-rs-install.XXXXXX")" || return 1
+  trap 'rm -rf "$stage"' EXIT
+  curl -fsSL "$url" -o "$stage/$asset_name" || return 1
+  verify_expected_sha256 "$stage/$asset_name" "$archive_sha" || return 1
+  tar -tzf "$stage/$asset_name" >"$stage/members" || return 1
+  if ! awk -v root="$name" '
+    $0 != root && $0 != root "/" && index($0, root "/") != 1 { exit 1 }
+    /(^|\/)\.\.(\/|$)/ { exit 1 }
+  ' "$stage/members"; then
+    log_error "Invalid tsc-rs archive layout"
+    return 1
+  fi
+  tar -xzf "$stage/$asset_name" -C "$stage" || return 1
+  candidate="$stage/$name"
+  [[ -x "$candidate/tsc" && -f "$candidate/lib.es5.d.ts" &&
+    -f "$candidate/LICENSE" && -f "$candidate/NOTICE.txt" ]] || {
+    log_error "Incomplete tsc-rs archive; compiler and adjacent libraries are required"
+    return 1
+  }
+  [[ "$("$candidate/tsc" --version 2>/dev/null)" == "Version $TSC_RS_TYPESCRIPT_VERSION" ]] || {
+    log_error "Unexpected tsc-rs compiler version"
+    return 1
+  }
+  binary_sha="$(file_sha256 "$candidate/tsc")" || return 1
+  (cd "$candidate" && find . -type f | LC_ALL=C sort) >"$stage/files" || return 1
+  local file
+  local file_sha
+  while IFS= read -r file; do
+    file_sha="$(file_sha256 "$candidate/$file")" || return 1
+    printf '%s  %s\n' "$file_sha" "$file" || return 1
+  done <"$stage/files" >"$candidate/files.sha256"
+  tsc_rs_receipt "$archive_sha" "$binary_sha" >"$candidate/receipt.json" || return 1
+  tsc_rs_wrapper >"$stage/wrapper" || return 1
+  chmod +x "$stage/wrapper" || return 1
+  ln -s "$name/receipt.json" "$stage/receipt-link" || return 1
+  installed="$NATIVE_BIN_DIR/$name"
+  [[ ! -d "$NATIVE_BIN_DIR/tsc-rs" && ! -d "$NATIVE_BIN_DIR/tsc-rs.receipt.json" ]] || return 1
+  if [[ -e "$NATIVE_BIN_DIR/tsc-rs.receipt.json" || -L "$NATIVE_BIN_DIR/tsc-rs.receipt.json" ]]; then
+    cp -P "$NATIVE_BIN_DIR/tsc-rs.receipt.json" "$stage/previous-receipt" || return 1
+  fi
+  if [[ -e "$installed" ]]; then
+    mv "$installed" "$stage/previous" || return 1
+  fi
+  if ! mv "$candidate" "$installed"; then
+    [[ ! -e "$stage/previous" ]] || mv "$stage/previous" "$installed"
+    return 1
+  fi
+  if ! mv "$stage/receipt-link" "$NATIVE_BIN_DIR/tsc-rs.receipt.json"; then
+    rm -rf "$installed"
+    [[ ! -e "$stage/previous" ]] || mv "$stage/previous" "$installed"
+    return 1
+  fi
+  if ! mv "$stage/wrapper" "$NATIVE_BIN_DIR/tsc-rs"; then
+    rm -rf "$installed"
+    [[ ! -e "$stage/previous" ]] || mv "$stage/previous" "$installed"
+    if [[ -e "$stage/previous-receipt" || -L "$stage/previous-receipt" ]]; then
+      mv "$stage/previous-receipt" "$NATIVE_BIN_DIR/tsc-rs.receipt.json"
+    else
+      rm -f "$NATIVE_BIN_DIR/tsc-rs.receipt.json"
+    fi
+    return 1
+  fi
+)
+
+tsc_rs_shadow_enabled() {
+  local setting
+  if [[ "${PRAGMA_SHADOW+x}" == x ]]; then
+    setting="$PRAGMA_SHADOW"
+  elif setting="$(git config --get pragma.shadow 2>/dev/null)"; then
+    setting="$(git config --bool --get pragma.shadow 2>/dev/null)" || {
+      log_error "pragma.shadow must be a Git boolean." >&2
+      return 2
+    }
+  else
+    setting=true
+  fi
+  case "$setting" in
+    1 | true) return 0 ;;
+    0 | false) return 1 ;;
+    *)
+      log_error "PRAGMA_SHADOW must be 0, 1, false, or true." >&2
+      return 2
+      ;;
+  esac
+}
+
 install_yamllint() {
   if has_tool python3; then
     log_info "Installing yamllint via pinned Python requirements..."
@@ -599,6 +750,9 @@ has_repo_tool() {
     clippy)
       cargo_has_subcommand clippy
       ;;
+    tsc-rs)
+      has_pinned_tsc_rs
+      ;;
     *)
       has_tool "$tool"
       ;;
@@ -612,7 +766,16 @@ tools_for_lang() {
   case "$lang" in
     go) echo "goimports golangci-lint" ;;
     rust) echo "rustfmt clippy" ;;
-    typescript) echo "prettier oxlint" ;;
+    typescript)
+      echo "prettier oxlint"
+      local shadow_status
+      if tsc_rs_shadow_enabled; then
+        echo "tsc-rs"
+      else
+        shadow_status=$?
+        [[ $shadow_status == 1 ]] || return "$shadow_status"
+      fi
+      ;;
     html) echo "prettier" ;;
     yaml) echo "prettier yamllint" ;;
     docker) echo "hadolint" ;;
@@ -647,7 +810,9 @@ main() {
 
     while IFS= read -r lang; do
       [[ -z "$lang" ]] && continue
-      for tool in $(tools_for_lang "$lang"); do
+      local language_tools
+      language_tools="$(tools_for_lang "$lang")" || return 1
+      for tool in $language_tools; do
         local already=false
         for existing in "${required_tools[@]}"; do
           [[ "$existing" == "$tool" ]] && already=true && break

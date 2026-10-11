@@ -19,7 +19,7 @@ RUNNER
 done
 export PATH="$tmp_dir/bin:$PATH"
 export TEST_COMMANDS="$tmp_dir/commands"
-export PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PRAGMA_OUTPUT_FORMAT=gpt
+export PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PRAGMA_OUTPUT_FORMAT=gpt PRAGMA_SHADOW=0
 unset PRAGMA_SKIP_TESTS
 cd "$tmp_dir/repo"
 run_checks() {

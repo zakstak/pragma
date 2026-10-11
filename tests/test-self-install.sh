@@ -124,6 +124,8 @@ EOF
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 export PRAGMA_GLOBAL_BIN_DIR="$tmp_dir/global-bin"
+# Compiler installation has its own checksum and fresh-install regression suite.
+export PRAGMA_SHADOW=0
 mkdir -p "$PRAGMA_GLOBAL_BIN_DIR"
 for core_tool in prek kingfisher; do
   cp "$(command -v "$core_tool")" "$PRAGMA_GLOBAL_BIN_DIR/$core_tool"
@@ -187,6 +189,9 @@ assert_file_contains "Generated config points format hook at repo-local wrapper"
 assert_file_contains "Generated config points lint hook at repo-local wrapper" "entry = \".pragma-hooks/lint.sh\"" "$target_repo/prek.toml"
 assert_file_contains "Generated config points secrets hook at repo-local wrapper" "entry = \".pragma-hooks/secrets.sh\"" "$target_repo/prek.toml"
 assert_file_contains "Generated config points test hook at repo-local wrapper" "entry = \".pragma-hooks/test.sh\"" "$target_repo/prek.toml"
+assert_file_contains "Generated config includes an independent shadow hook" 'id = "pragma-shadow"' "$target_repo/prek.toml"
+assert_file_contains "Generated shadow hook uses the repo-local wrapper" 'entry = ".pragma-hooks/shadow.sh"' "$target_repo/prek.toml"
+assert_file_contains "Generated shadow wrapper resolves the shared capture helper" 'exec "$PRAGMA_HOME/lib/shadow.sh" "$@"' "$target_repo/.pragma-hooks/shadow.sh"
 assert_file_contains "Generated config keeps docker lint regex" "[Dd]ockerfile" "$target_repo/prek.toml"
 assert_file_not_contains "Generated config avoids repo-local lib paths" "entry = \"./lib/" "$target_repo/prek.toml"
 assert_file_contains "Generated format wrapper resolves runtime location" 'exec "$PRAGMA_HOME/lib/format.sh" "$@"' "$target_repo/.pragma-hooks/format.sh"

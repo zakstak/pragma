@@ -11,42 +11,80 @@ PRAGMA_OUTPUT_FORMAT="${PRAGMA_OUTPUT_FORMAT:-gpt}"
 TEST_RERUN="./lib/test.sh"
 TEST_SKIP_CMD="PRAGMA_SKIP_TESTS=1 git push"
 
-# Shadow capture is opt-in for this invocation or the local repository.
-SHADOW_ENABLED="${PRAGMA_SHADOW:-$(git config --bool --get pragma.shadow 2>/dev/null || echo false)}"
+# Shadow comparisons are advisory and enabled unless explicitly opted out.
+if [[ -n "${PRAGMA_SHADOW:-}" ]]; then
+  SHADOW_ENABLED="$PRAGMA_SHADOW"
+elif git config --get pragma.shadow >/dev/null 2>&1; then
+  if ! SHADOW_ENABLED="$(git config --bool --get pragma.shadow 2>/dev/null)"; then
+    printf 'Shadow capture skipped: local pragma.shadow must be a Git boolean.\n' >&2
+    SHADOW_ENABLED=false
+  fi
+else
+  SHADOW_ENABLED=true
+fi
 case "$SHADOW_ENABLED" in
   1 | true) SHADOW_ENABLED=true ;;
   0 | false) SHADOW_ENABLED=false ;;
   *)
     printf 'PRAGMA_SHADOW must be 0, 1, false, or true.\n' >&2
+    if [[ ${1:-} == --shadow-only ]]; then exit 0; fi
     exit 2
     ;;
 esac
-if [[ ${1:-} == --shadow ]]; then
+SHADOW_ONLY=false
+SHADOW_FORCED=false
+if [[ ${1:-} == --shadow-only ]]; then
+  SHADOW_ONLY=true
+  shift
+elif [[ ${1:-} == --shadow ]]; then
+  SHADOW_FORCED=true
   SHADOW_ENABLED=true
   shift
 fi
 if [[ $# -ne 0 ]]; then
-  printf 'Usage: %s [--shadow]\n' "$0" >&2
+  printf 'Usage: %s [--shadow|--shadow-only]\n' "$0" >&2
   exit 2
 fi
 
 run_shadow_typecheck() {
-  local runner="$1" reader="$2" receipt_file receipt_dir status output
+  local runner="$1" reader="$2" mode="${3:-required}" receipt_file receipt_dir status output
   if ! receipt_file="$(mktemp)"; then
     printf 'Shadow capture unavailable; running the normal typecheck.\n' >&2
-    pragma_run "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$runner" run typecheck
-    return $?
+    if [[ "$mode" == required ]]; then
+      pragma_run "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$runner" run typecheck
+      return $?
+    fi
+    return 0
   fi
-  if pragma_exec "$reader" "$SCRIPT_DIR/shadow.js" "$runner" "$receipt_file"; then
+  if pragma_exec "$reader" "$SCRIPT_DIR/shadow.js" "$runner" "$receipt_file" "$mode"; then
     status=0
   else
     status=$?
   fi
   receipt_dir="$(cat "$receipt_file")"
   rm -f "$receipt_file"
+  if [[ "$mode" == advisory && $status -eq 0 && -z "$receipt_dir" ]]; then
+    return 0
+  fi
   # A capture setup error must not replace the normal compiler gate.
   if [[ ! -f "$receipt_dir/metadata.json" ]]; then
     printf 'Shadow capture unavailable; running the normal typecheck.\n' >&2
+    if [[ "$mode" == required ]]; then
+      pragma_run "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$runner" run typecheck
+      return $?
+    fi
+    return 0
+  fi
+  if [[ "$mode" == advisory ]]; then
+    return 0
+  fi
+  # A complete-looking receipt can never stand in for an unrun normal gate.
+  if ! pragma_exec "$reader" -e '
+    const fs = require("node:fs");
+    const metadata = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    process.exit(metadata.baseline ? 0 : 1);
+  ' "$receipt_dir/metadata.json"; then
+    printf 'Shadow capture has no baseline; running the normal typecheck.\n' >&2
     pragma_run "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$runner" run typecheck
     return $?
   fi
@@ -147,8 +185,12 @@ test_typescript() {
     fi
   fi
 
-  if $SHADOW_ENABLED && ! $run_typecheck; then
-    printf 'Shadow capture skipped: no project typecheck script is declared.\n' >&2
+  local inline_shadow="$SHADOW_ENABLED"
+  if ! $SHADOW_FORCED && [[ -f prek.toml ]] && grep -Eq "^[[:space:]]*id[[:space:]]*=[[:space:]]*[\"']pragma-shadow[\"']" prek.toml; then
+    inline_shadow=false
+  fi
+  if $inline_shadow && ! $run_typecheck; then
+    run_shadow_typecheck "$runner" "$reader" advisory || return 1
   fi
   if ! $run_typecheck && ! $run_tests; then
     log_skip "No typecheck or test script in package.json"
@@ -161,7 +203,7 @@ test_typescript() {
 
   if $run_typecheck; then
     log_info "Running project typecheck ($runner)..."
-    if $SHADOW_ENABLED; then
+    if $inline_shadow; then
       run_shadow_typecheck "$runner" "$reader" || return 1
     else
       pragma_run "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$runner" run typecheck || return 1
@@ -207,6 +249,20 @@ main() {
   pragma_set_context "pre-push" "test"
 
   if [[ "${PRAGMA_SKIP_TESTS:-0}" == "1" ]]; then
+    exit 0
+  fi
+
+  if $SHADOW_ONLY; then
+    if ! $SHADOW_ENABLED; then exit 0; fi
+    local reader=node runner=npm
+    if ! has_tool node; then
+      if has_tool bun; then reader=bun; else
+        printf 'Shadow capture unavailable: node or bun is required.\n' >&2
+        exit 0
+      fi
+    fi
+    if [[ -f bun.lock || -f bun.lockb ]] && has_tool bun; then runner=bun; fi
+    run_shadow_typecheck "$runner" "$reader" advisory || true
     exit 0
   fi
 

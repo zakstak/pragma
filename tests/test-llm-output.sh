@@ -291,7 +291,7 @@ exit 1
 EOF
 chmod +x "$bin_dir/npm"
 
-capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt bash -c "cd \"$test_repo\" && \"$PRAGMA_DIR/lib/test.sh\""
+capture_command_result env PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$PATH" PRAGMA_OUTPUT_FORMAT=gpt PRAGMA_SHADOW=0 bash -c "cd \"$test_repo\" && \"$PRAGMA_DIR/lib/test.sh\""
 assert_status "Test failure exits non-zero" 1 "$CAPTURED_STATUS"
 assert_single_line "Test failure stays single-line" "$CAPTURED_OUTPUT"
 assert_contains "Test failure emits pre-push hook" '"hook":"pre-push"' "$CAPTURED_OUTPUT"

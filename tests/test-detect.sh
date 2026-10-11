@@ -177,6 +177,12 @@ touch "$portable_repo/src/helper.js"
 result=$(cd "$portable_repo" && detect_from_repo)
 assert_contains "Source-only JavaScript projects get language tools" "typescript" "$result"
 
+workspace_repo="$tmp_dir/workspace-detect"
+mkdir -p "$workspace_repo/packages/frontend/src"
+touch "$workspace_repo/packages/frontend/package.json"
+result=$(cd "$workspace_repo" && detect_from_repo)
+assert_contains "Nested package markers install the shadow compiler before source discovery" "typescript" "$result"
+
 venv_repo="$tmp_dir/venv-detect"
 mkdir -p "$venv_repo/.venv/bin"
 touch "$venv_repo/.venv/bin/ignored.py"
