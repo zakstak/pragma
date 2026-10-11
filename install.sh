@@ -2,11 +2,10 @@
 # install.sh — Bootstrap pragma into a target repository
 #
 # Usage:
-#   pragma/install.sh [--agent] [--docker-tools] [/path/to/target-repo]
+#   pragma/install.sh [--agent] [/path/to/target-repo]
 #
 # Options:
 #   --agent         Non-interactive mode (auto-install tools, no prompts)
-#   --docker-tools  Use the Docker tooling image instead of host-installed tools
 #
 # If no target repo is specified, uses the current directory.
 set -euo pipefail
@@ -27,13 +26,15 @@ esac
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
 AGENT_MODE=false
-DOCKER_TOOLS=false
 TARGET_REPO=""
 
 for arg in "$@"; do
   case "$arg" in
     --agent) AGENT_MODE=true ;;
-    --docker-tools) DOCKER_TOOLS=true ;;
+    --*)
+      log_error "Unknown option: $arg"
+      exit 1
+      ;;
     *) TARGET_REPO="$arg" ;;
   esac
 done
@@ -52,7 +53,6 @@ fi
 
 TARGET_REPO="$(cd "$TARGET_REPO" && pwd)"
 SELF_INSTALL=false
-DOCKER_WRAPPER_BIN_DIR="$PRAGMA_DIR/bin/docker"
 HOOK_WRAPPER_DIR="$TARGET_REPO/.pragma-hooks"
 
 if [[ "$TARGET_REPO" == "$PRAGMA_DIR" ]]; then
@@ -66,20 +66,15 @@ if ! git -C "$TARGET_REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-# Add pragma/bin to PATH if it exists (installed binaries or Docker wrappers)
-pragma_prepend_path "$PRAGMA_DIR/bin"
-
 log_header "Pragma Setup"
 log_info "Pragma dir: ${BOLD}$PRAGMA_DIR${RESET}"
 log_info "Target repo:   ${BOLD}$TARGET_REPO${RESET}"
 log_info "Mode:          ${BOLD}$(if $AGENT_MODE; then echo "agent (non-interactive)"; else echo "interactive"; fi)${RESET}"
-log_info "Tooling:       ${BOLD}$(if $DOCKER_TOOLS; then echo "docker image"; else echo "host install"; fi)${RESET}"
 echo ""
 
 render_regenerate_command() {
   # shellcheck disable=SC2088 # This is a comment for the generated config.
-  printf '~/.pragma/install.sh%s <target-repo>' \
-    "$(if $DOCKER_TOOLS; then printf ' --docker-tools'; fi)"
+  printf '~/.pragma/install.sh <target-repo>'
 }
 
 toml_escape_string() {
@@ -99,55 +94,6 @@ render_entry_path() {
   fi
 }
 
-write_env_line() {
-  if $SELF_INSTALL && $DOCKER_TOOLS; then
-    printf 'env = { PRAGMA_TOOL_MODE = "docker" }\n'
-  fi
-}
-
-write_canonical_template() {
-  local output_path="$1"
-
-  cat >"$output_path" <<'EOF'
-[[repos]]
-repo = "local"
-
-[[repos.hooks]]
-id = "format"
-name = "format"
-entry = "./lib/format.sh"
-language = "script"
-files = '\.(go|rs|ts|tsx|js|jsx|html|htm|yml|yaml|sh|md|toml|json|py)$'
-stages = ["pre-commit"]
-
-[[repos.hooks]]
-id = "lint"
-name = "lint"
-entry = "./lib/lint.sh"
-language = "script"
-files = '(\.(go|rs|ts|tsx|js|jsx|yml|yaml|sh|toml|py)$)|((^|/)([Dd]ockerfile(\.[^/]+)?|[^/]+\.[Dd]ockerfile)$)'
-stages = ["pre-commit"]
-
-[[repos.hooks]]
-id = "kingfisher"
-name = "kingfisher"
-entry = "./lib/secrets.sh"
-language = "script"
-pass_filenames = false
-always_run = true
-stages = ["pre-commit"]
-
-[[repos.hooks]]
-id = "test"
-name = "test"
-entry = "./lib/test.sh"
-language = "script"
-pass_filenames = false
-always_run = true
-stages = ["pre-push"]
-EOF
-}
-
 write_hook_wrapper() {
   local script_path="$1"
   local wrapper_path="$HOOK_WRAPPER_DIR/$script_path"
@@ -164,9 +110,6 @@ if [[ ! -x "$PRAGMA_HOME/lib/format.sh" ]]; then
   exit 1
 fi
 WRAPPER
-    if $DOCKER_TOOLS; then
-      printf 'export PRAGMA_TOOL_MODE=docker\n'
-    fi
     # shellcheck disable=SC2016 # Variables expand when the generated hook runs.
     printf 'exec "$PRAGMA_HOME/lib/%s" "$@"\n' "$script_path"
   } >"$wrapper_path"
@@ -195,78 +138,22 @@ remove_stale_lefthook_shim() {
   fi
 }
 
-if $DOCKER_TOOLS; then
-  if $AGENT_MODE; then
-    (cd "$TARGET_REPO" && "$PRAGMA_DIR/tools/install-tools.sh" --docker --agent) || {
-      log_error "docker tooling setup failed"
-      exit 1
-    }
-  else
-    (cd "$TARGET_REPO" && "$PRAGMA_DIR/tools/install-tools.sh" --docker) || {
-      log_error "docker tooling setup failed"
-      exit 1
-    }
-  fi
+# ─── Step 1: Ensure the shared per-user core ──────────────────────────────────
 
-  pragma_prepend_path "$DOCKER_WRAPPER_BIN_DIR"
-  hash -r 2>/dev/null || true
-  echo ""
-fi
-
-# ─── Step 1: Install prek if needed ───────────────────────────────────────────
-
-if ! has_tool prek; then
-  log_warn "prek is not installed"
-
-  if $AGENT_MODE; then
-    log_info "Installing prek..."
-    if (cd "$TARGET_REPO" && PRAGMA_INSTALL_ONLY_TOOLS="prek" "$PRAGMA_DIR/tools/install-tools.sh" --agent); then
-      :
-    else
-      log_error "Cannot install prek automatically"
-      log_info "Install manually: npm install -g @j178/prek"
-      exit 1
-    fi
-  else
-    log_info "Install prek via one of:"
-    echo "  $PRAGMA_DIR/tools/install-tools.sh --agent"
-    echo "  npm install -g @j178/prek"
-    echo ""
-    read -rp "Attempt auto-install via Pragma's pinned binary installer? [Y/n] " answer
-    if [[ ! "$answer" =~ ^[Nn] ]]; then
-      (cd "$TARGET_REPO" && PRAGMA_INSTALL_ONLY_TOOLS="prek" "$PRAGMA_DIR/tools/install-tools.sh" --agent) || {
-        log_error "Failed to install prek"
-        exit 1
-      }
-    else
-      log_error "prek is required. Please install and re-run."
-      exit 1
-    fi
-  fi
-
-  pragma_prepend_path "$PRAGMA_DIR/bin"
-
-  hash -r 2>/dev/null || true
-
-  if has_tool prek; then
-    log_success "prek installed"
-  else
-    log_error "prek installation failed"
-    exit 1
-  fi
-else
-  log_success "prek is available ($(prek --version 2>/dev/null || echo 'unknown version'))"
+core_args=(--global)
+$AGENT_MODE && core_args+=(--agent)
+(cd "$TARGET_REPO" && "$PRAGMA_DIR/tools/install-tools.sh" "${core_args[@]}") || {
+  log_error "Cannot install the global core tools"
+  exit 1
+}
+log_success "Global core tools are available in $(pragma_global_bin_dir)"
+if [[ ":$PATH:" != *":$(pragma_global_bin_dir):"* ]]; then
+  log_info "Add $(pragma_global_bin_dir) to your shell PATH to run prek and Kingfisher directly"
 fi
 
 # ─── Step 2: Generate prek.toml in target repo ───────────────────────────────
 
 PREK_CONFIG="$TARGET_REPO/prek.toml"
-
-write_self_install_template() {
-  local output_path="$1"
-
-  write_canonical_template "$output_path"
-}
 
 generate_config() {
   {
@@ -281,7 +168,6 @@ generate_config() {
     printf 'name = "format"\n'
     printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path format.sh)")"
     printf 'language = "script"\n'
-    write_env_line
     printf "files = '\\\\.(go|rs|ts|tsx|js|jsx|html|htm|yml|yaml|sh|md|toml|json|py)$'\n"
     printf 'stages = ["pre-commit"]\n\n'
 
@@ -290,7 +176,6 @@ generate_config() {
     printf 'name = "lint"\n'
     printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path lint.sh)")"
     printf 'language = "script"\n'
-    write_env_line
     printf "files = '(\\\\.(go|rs|ts|tsx|js|jsx|yml|yaml|sh|toml|py)$)|((^|/)([Dd]ockerfile(\\\\.[^/]+)?|[^/]+\\\\.[Dd]ockerfile)$)'\n"
     printf 'stages = ["pre-commit"]\n\n'
 
@@ -299,7 +184,6 @@ generate_config() {
     printf 'name = "kingfisher"\n'
     printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path secrets.sh)")"
     printf 'language = "script"\n'
-    write_env_line
     printf 'pass_filenames = false\n'
     printf 'always_run = true\n'
     printf 'stages = ["pre-commit"]\n\n'
@@ -309,20 +193,10 @@ generate_config() {
     printf 'name = "test"\n'
     printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path test.sh)")"
     printf 'language = "script"\n'
-    write_env_line
     printf 'pass_filenames = false\n'
     printf 'always_run = true\n'
     printf 'stages = ["pre-push"]\n'
   } >"$PREK_CONFIG"
-}
-
-restore_self_install_config() {
-  local temp_template
-
-  temp_template="$(mktemp)"
-  write_self_install_template "$temp_template"
-  cp "$temp_template" "$PREK_CONFIG"
-  rm -f "$temp_template"
 }
 
 if ! $SELF_INSTALL; then
@@ -333,18 +207,8 @@ fi
 
 if $SELF_INSTALL; then
   if [[ -f "$PREK_CONFIG" ]]; then
-    if $DOCKER_TOOLS; then
-      log_info "Self-install detected; updating repo-local prek.toml for Docker-backed tools"
-      generate_config
-      log_success "Updated repo-local prek.toml at $PREK_CONFIG"
-    elif grep -Eq 'PRAGMA_(DOCKER_BIN_DIR|TOOL_MODE)' "$PREK_CONFIG"; then
-      log_info "Self-install detected; restoring repo-local prek.toml from tracked template"
-      restore_self_install_config
-      log_success "Restored repo-local prek.toml at $PREK_CONFIG"
-    else
-      log_info "Self-install detected; keeping repo-local prek.toml"
-      log_success "Using repo-local prek.toml at $PREK_CONFIG"
-    fi
+    log_info "Self-install detected; keeping repo-local prek.toml"
+    log_success "Using repo-local prek.toml at $PREK_CONFIG"
   else
     log_error "Self-install requires repo-local prek.toml at $PREK_CONFIG"
     exit 1
@@ -386,7 +250,7 @@ remove_stale_lefthook_shim pre-push
 remove_stale_lefthook_shim prepare-commit-msg
 
 log_info "Installing git hooks via prek..."
-(cd "$TARGET_REPO" && prek install --overwrite --hook-type pre-commit --hook-type pre-push) || {
+(cd "$TARGET_REPO" && pragma_exec prek install --overwrite --hook-type pre-commit --hook-type pre-push) || {
   log_error "prek install failed"
   exit 1
 }
@@ -395,9 +259,7 @@ log_success "Git hooks installed"
 # ─── Step 5: Install required tools ───────────────────────────────────────────
 
 echo ""
-if $DOCKER_TOOLS; then
-  log_skip "Docker-backed tool wrappers already installed"
-elif $AGENT_MODE; then
+if $AGENT_MODE; then
   (cd "$TARGET_REPO" && "$PRAGMA_DIR/tools/install-tools.sh" --agent)
 else
   (cd "$TARGET_REPO" && "$PRAGMA_DIR/tools/install-tools.sh")

@@ -55,22 +55,11 @@ log_skip() {
 
 # Check if a tool is available. Returns 0 if found, 1 if not.
 has_tool() {
-  command -v "$1" &>/dev/null
-}
-
-pragma_prepend_path() {
-  local candidate
-
-  for candidate in "$@"; do
-    [[ -d "$candidate" ]] || continue
-
-    case ":$PATH:" in
-      *":$candidate:"*) ;;
-      *) PATH="$candidate:$PATH" ;;
-    esac
-  done
-
-  export PATH
+  if pragma_go_tool_package "$1" >/dev/null 2>&1; then
+    command -v go >/dev/null 2>&1
+    return $?
+  fi
+  pragma_tool_path "$1" >/dev/null 2>&1
 }
 
 # Require a tool or print a warning and return 1.
@@ -88,8 +77,48 @@ require_tool() {
 golangci_is_v2() {
   has_tool golangci-lint || return 1
   local version
-  version="$(golangci-lint version --short 2>/dev/null)" || return 1
+  version="$(pragma_exec golangci-lint version --short 2>/dev/null)" || return 1
   [[ "$version" == v2.* || "$version" == 2.* ]]
+}
+
+go_module_root_for_file() {
+  local file="$1"
+  local repo_root dir
+
+  repo_root="$(pwd)"
+  dir="$(cd "$(dirname "$file")" && pwd)"
+
+  while [[ "$dir" != "$repo_root" ]] && [[ "$dir" != "/" ]]; do
+    if [[ -f "$dir/go.mod" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+
+    dir="$(dirname "$dir")"
+  done
+
+  printf '%s\n' "$repo_root"
+}
+
+repo_relative_path_from_dir() {
+  local base_dir="$1"
+  local target_path="$2"
+  local repo_root current_dir prefix
+
+  repo_root="$(pwd)"
+  current_dir="$base_dir"
+  prefix=""
+
+  if [[ "$target_path" == /* ]]; then
+    target_path="${target_path#"$repo_root"/}"
+  fi
+
+  while [[ "$current_dir" != "$repo_root" ]] && [[ "$current_dir" != "/" ]]; do
+    prefix+="../"
+    current_dir="$(dirname "$current_dir")"
+  done
+
+  printf '%s%s\n' "$prefix" "$target_path"
 }
 
 # ─── File filtering ──────────────────────────────────────────────────────────
@@ -159,13 +188,13 @@ pragma_dir() {
   echo "$dir"
 }
 
-if [[ "${PRAGMA_SKIP_INTERNAL_BIN_PATH:-0}" != "1" && "${PRAGMA_RUNNING_IN_DOCKER:-0}" != "1" ]]; then
-  pragma_prepend_path "$(pragma_dir)/bin"
+source "$(pragma_dir)/lib/tooling.sh"
 
-  if [[ "${PRAGMA_TOOL_MODE:-native}" == "docker" ]]; then
-    pragma_prepend_path "$(pragma_dir)/bin/docker"
-  elif [[ -n "${PRAGMA_DOCKER_BIN_DIR:-}" ]]; then
-    pragma_prepend_path "$PRAGMA_DOCKER_BIN_DIR"
+if [[ "${PRAGMA_SKIP_INTERNAL_BIN_PATH:-0}" != "1" ]]; then
+  # Active toolchain managers precede shared language fallbacks.
+  if [[ ":$PATH:" != *":$(pragma_dir)/bin:"* && -d "$(pragma_dir)/bin" ]]; then
+    PATH="$PATH:$(pragma_dir)/bin"
+    export PATH
   fi
 fi
 
@@ -257,7 +286,7 @@ pragma_run() {
   local status
 
   set +e
-  output="$("$@" 2>&1)"
+  output="$(pragma_exec "$@" 2>&1)"
   status=$?
   set -e
 

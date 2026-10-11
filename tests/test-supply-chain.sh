@@ -36,13 +36,6 @@ assert_not_contains() {
   fi
 }
 
-assert_contains "Dockerfile pins base image digest" "@sha256:" "$PRAGMA_DIR/Dockerfile"
-assert_contains "Dockerfile uses the shared installer" "/opt/pragma/tools/install-tools.sh --agent" "$PRAGMA_DIR/Dockerfile"
-assert_contains "Dockerfile pins Rust toolchain" '--default-toolchain "$RUST_VERSION"' "$PRAGMA_DIR/Dockerfile"
-assert_contains "Dockerfile includes pinned Go toolchain" "FROM golang:1.27.2-bookworm@sha256:" "$PRAGMA_DIR/Dockerfile"
-assert_not_contains "Dockerfile avoids global npm install" "npm install --global" "$PRAGMA_DIR/Dockerfile"
-assert_not_contains "Dockerfile avoids cargo install" "cargo install" "$PRAGMA_DIR/Dockerfile"
-
 assert_contains "Installer uses npm ci" 'npm ci --ignore-scripts --no-fund --no-audit --prefix "$PRAGMA_DIR/.npm-packages"' "$PRAGMA_DIR/tools/install-tools.sh"
 assert_contains "Installer uses hashed Python requirements" 'install --quiet --require-hashes -r "$requirements_file"' "$PRAGMA_DIR/tools/install-tools.sh"
 assert_contains "Installer extracts checksum entries robustly" '$2 == asset || $2 == "*" asset { print; exit }' "$PRAGMA_DIR/tools/install-tools.sh"

@@ -5,10 +5,10 @@
 # Go is needed only to build goimports; Rust tooling uses rustup.
 #
 # Usage:
-#   install-tools.sh [--agent] [--docker] [--update]
+#   install-tools.sh [--agent] [--update] [--global]
 #     --agent  Non-interactive auto-install
-#     --docker Install Docker-backed wrappers instead of host tools
-#     --update Reinstall native tools at the committed versions
+#     --update Reinstall fallback tools at committed versions; keep project selections
+#     --global Install only the per-user core tools
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,14 +29,14 @@ case "$OS" in
 esac
 
 AGENT_MODE=false
-DOCKER_MODE=false
 UPDATE_TOOLS=false
+GLOBAL_MODE=false
 
 for arg in "$@"; do
   case "$arg" in
     --agent) AGENT_MODE=true ;;
-    --docker) DOCKER_MODE=true ;;
     --update) UPDATE_TOOLS=true ;;
+    --global) GLOBAL_MODE=true ;;
     *)
       log_error "Unknown option: $arg"
       exit 1
@@ -44,34 +44,9 @@ for arg in "$@"; do
   esac
 done
 
-BIN_DIR="$PRAGMA_DIR/bin"
-mkdir -p "$BIN_DIR"
-if [[ "${PRAGMA_SKIP_INTERNAL_BIN_PATH:-0}" != "1" ]]; then
-  pragma_prepend_path "$BIN_DIR"
-fi
-DOCKER_BIN_DIR="$BIN_DIR/docker"
-
-DOCKER_WRAPPED_TOOLS=(
-  kingfisher
-  go
-  gofmt
-  goimports
-  golangci-lint
-  cargo
-  rustfmt
-  npm
-  prettier
-  eslint
-  python
-  pytest
-  yamllint
-  hadolint
-  shellcheck
-  shfmt
-  taplo
-  ruff
-)
-
+NATIVE_BIN_DIR="$PRAGMA_DIR/bin"
+GLOBAL_BIN_DIR="$(pragma_global_bin_dir)"
+BIN_DIR="$NATIVE_BIN_DIR"
 ARCH="$(uname -m)"
 
 case "$ARCH" in
@@ -647,63 +622,20 @@ tools_for_lang() {
   esac
 }
 
-install_docker_tool_wrapper() {
-  local tool="$1"
-
-  mkdir -p "$DOCKER_BIN_DIR"
-
-  cat >"$DOCKER_BIN_DIR/$tool" <<EOF
-#!/usr/bin/env bash
-SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-PRAGMA_DIR="\$(cd "\$SCRIPT_DIR/../.." && pwd)"
-exec "\$PRAGMA_DIR/tools/docker-run.sh" "$tool" "\$@"
-EOF
-
-  chmod +x "$DOCKER_BIN_DIR/$tool"
-}
-
-install_docker_wrappers() {
-  if ! has_tool docker; then
-    log_error "docker is required for --docker mode"
-    return 1
-  fi
-
-  # Git executes prek on the host, so never install a Docker-backed hook manager.
-  rm -f "$DOCKER_BIN_DIR/prek" "$DOCKER_BIN_DIR/templ" "$DOCKER_BIN_DIR/gitleaks"
-  log_header "Docker Tooling Setup"
-
-  local tool
-  for tool in "${DOCKER_WRAPPED_TOOLS[@]}"; do
-    install_docker_tool_wrapper "$tool"
-  done
-
-  log_success "Docker-backed tools installed to $DOCKER_BIN_DIR"
-  log_info "Set PRAGMA_DOCKER_IMAGE to override the default image tag (pragma-tools:local)"
-  return 0
-}
-
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
-  if $DOCKER_MODE; then
-    install_docker_wrappers
-    return $?
-  fi
-
   log_header "Tool Installation Check"
-
-  # Add bin dir to PATH for this session
-  if [[ "${PRAGMA_SKIP_INTERNAL_BIN_PATH:-0}" != "1" ]]; then
-    export PATH="$BIN_DIR:$PATH"
-  fi
 
   local required_tools=()
 
   if [[ -n "${PRAGMA_INSTALL_ONLY_TOOLS:-}" ]]; then
     read -r -a required_tools <<<"$PRAGMA_INSTALL_ONLY_TOOLS"
   else
-    # Always need these
     required_tools=("prek" "kingfisher")
+  fi
+
+  if ! $GLOBAL_MODE && [[ -z "${PRAGMA_INSTALL_ONLY_TOOLS:-}" ]]; then
 
     # Detect languages and add their tools
     local langs
@@ -724,14 +656,58 @@ main() {
 
   # Check what's missing
   local missing=()
+  local project_path project_status
+  local project_errors=()
   for tool in "${required_tools[@]}"; do
-    if ! $UPDATE_TOOLS && has_repo_tool "$tool"; then
+    if $GLOBAL_MODE && ! pragma_is_core_tool "$tool"; then
+      log_error "$tool is a language tool; --global installs only prek and Kingfisher"
+      return 1
+    fi
+    if ! pragma_is_core_tool "$tool"; then
+      case "$tool" in
+        goimports | golangci-lint)
+          if project_path="$(pragma_go_tool_package "$tool")"; then
+            if ! command -v go >/dev/null 2>&1; then
+              log_error "$tool uses a Go module tool; install the project's Go toolchain first"
+              project_errors+=("$tool")
+              continue
+            fi
+            log_success "$tool uses the project selection ($project_path)"
+            continue
+          fi
+          ;;
+        *)
+          if project_path="$(pragma_project_tool_path "$tool")"; then
+            log_success "$tool uses the project selection ($project_path)"
+            continue
+          else
+            project_status=$?
+            if [[ $project_status == 2 ]]; then
+              log_error "$tool is declared by the project but unavailable; install the project's dependencies first"
+              project_errors+=("$tool")
+              continue
+            fi
+          fi
+          ;;
+      esac
+    fi
+    local available=false
+    if pragma_is_core_tool "$tool"; then
+      [[ ! -x "$GLOBAL_BIN_DIR/$tool" ]] || available=true
+    elif has_repo_tool "$tool"; then
+      available=true
+    fi
+    if ! $UPDATE_TOOLS && $available; then
       log_success "$tool is available"
     else
       missing+=("$tool")
       log_warn "$tool is ${BOLD}missing${RESET}"
     fi
   done
+
+  if [[ ${#project_errors[@]} -gt 0 ]]; then
+    return 1
+  fi
 
   if [[ ${#missing[@]} -eq 0 ]]; then
     log_success "All tools are installed!"
@@ -740,7 +716,7 @@ main() {
 
   echo ""
   log_info "${#missing[@]} tool(s) to install: ${BOLD}${missing[*]}${RESET}"
-  log_info "Binaries will be placed in ${BOLD}$BIN_DIR${RESET}"
+  log_info "Core tools: $GLOBAL_BIN_DIR; language fallbacks: $NATIVE_BIN_DIR"
 
   if ! $AGENT_MODE; then
     echo ""
@@ -753,6 +729,11 @@ main() {
 
   local failed=()
   for tool in "${missing[@]}"; do
+    BIN_DIR="$NATIVE_BIN_DIR"
+    if pragma_is_core_tool "$tool"; then
+      BIN_DIR="$GLOBAL_BIN_DIR"
+    fi
+    mkdir -p "$BIN_DIR"
     local installer_name="install_${tool//-/_}"
 
     if declare -f "$installer_name" >/dev/null 2>&1; then
@@ -776,7 +757,7 @@ main() {
   fi
 
   echo ""
-  log_success "All tools installed to $BIN_DIR"
+  log_success "All requested tools installed"
 }
 
 main

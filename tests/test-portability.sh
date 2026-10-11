@@ -7,6 +7,7 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 stub_bin="$tmp_dir/stubs"
+export PRAGMA_GLOBAL_BIN_DIR="$stub_bin"
 pragma_copy="$tmp_dir/pragma copy"
 repo_dir="$tmp_dir/repo"
 mkdir -p "$stub_bin" "$pragma_copy" "$repo_dir"
@@ -19,6 +20,27 @@ done
 export PATH="$stub_bin:$PATH"
 git init -q "$repo_dir"
 bash "$pragma_copy/install.sh" --agent "$repo_dir" >/dev/null
+
+for position in before after; do
+  args=(--agent)
+  if [[ "$position" == before ]]; then
+    args+=(--docker-tools "$repo_dir")
+  else
+    args+=("$repo_dir" --docker-tools)
+  fi
+  if bash "$pragma_copy/install.sh" "${args[@]}" >"$tmp_dir/removed-mode.log" 2>&1; then
+    printf 'FAIL: removed Docker mode was accepted\n'
+    exit 1
+  fi
+  rg -q 'Unknown option: --docker-tools' "$tmp_dir/removed-mode.log"
+done
+printf 'PASS: removed bootstrap mode fails regardless of argument order\n'
+if bash "$pragma_copy/tools/install-tools.sh" --agent --docker >"$tmp_dir/removed-mode.log" 2>&1; then
+  printf 'FAIL: removed wrapper installer mode was accepted\n'
+  exit 1
+fi
+rg -q 'Unknown option: --docker' "$tmp_dir/removed-mode.log"
+printf 'PASS: removed wrapper installer mode fails explicitly\n'
 
 # Use a visible marker to prove which checkout the generated wrapper executes.
 printf '#!/bin/sh\nprintf "first-checkout\\n"\n' >"$pragma_copy/lib/format.sh"

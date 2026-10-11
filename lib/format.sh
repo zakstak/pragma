@@ -76,23 +76,47 @@ indexed_map_get() {
 
 # ─── Per-language formatters ──────────────────────────────────────────────────
 
+run_go_formatter_in_dir() {
+  local dir="$1"
+  shift
+  (cd "$dir" && pragma_exec "$@")
+}
+
 format_go() {
   local -a files=("$@")
   local -a go_files=()
   filter_by_ext go_files go -- "${files[@]}"
   [[ ${#go_files[@]} -eq 0 ]] && return 0
 
-  if has_tool goimports; then
-    log_info "Formatting Go files..."
-    pragma_run "goimports" "fmt" 0 "" "$FORMAT_RERUN" "go formatting failed" goimports -w "${go_files[@]}" || return 1
-  elif has_tool gofmt; then
-    log_info "Formatting Go files (gofmt)..."
-    pragma_run "gofmt" "fmt" 0 "" "$FORMAT_RERUN" "go formatting failed" gofmt -w "${go_files[@]}" || return 1
-  else
-    log_warn "Missing tool: ${BOLD}goimports${RESET} or ${BOLD}gofmt${RESET} (go formatter)"
-    pragma_add_failure "goimports" "tool" 0 "" "$FORMAT_RERUN" "missing tool: goimports or gofmt" "" 1
-    return 1
-  fi
+  local file module_root existing_root seen_root
+  local -a module_roots=()
+  local -a module_files=()
+  for file in "${go_files[@]}"; do
+    module_root="$(go_module_root_for_file "$file")"
+    seen_root=false
+    if [[ ${#module_roots[@]} -gt 0 ]]; then
+      for existing_root in "${module_roots[@]}"; do
+        [[ "$existing_root" != "$module_root" ]] || seen_root=true
+      done
+    fi
+    $seen_root || module_roots+=("$module_root")
+  done
+  for module_root in "${module_roots[@]}"; do
+    module_files=()
+    for file in "${go_files[@]}"; do
+      if [[ "$(go_module_root_for_file "$file")" == "$module_root" ]]; then
+        module_files+=("$(repo_relative_path_from_dir "$module_root" "$file")")
+      fi
+    done
+    if (cd "$module_root" && { pragma_go_tool_package goimports >/dev/null || has_tool goimports; }); then
+      pragma_run "goimports" "fmt" 0 "" "$FORMAT_RERUN" "go formatting failed" run_go_formatter_in_dir "$module_root" goimports -w "${module_files[@]}" || return 1
+    elif has_tool gofmt; then
+      pragma_run "gofmt" "fmt" 0 "" "$FORMAT_RERUN" "go formatting failed" run_go_formatter_in_dir "$module_root" gofmt -w "${module_files[@]}" || return 1
+    else
+      pragma_add_failure "goimports" "tool" 0 "" "$FORMAT_RERUN" "missing tool: goimports or gofmt" "" 1
+      return 1
+    fi
+  done
 }
 
 format_rust() {
