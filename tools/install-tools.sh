@@ -176,6 +176,28 @@ node_supports_oxlint() {
     ((major == 20 && minor >= 19))
 }
 
+write_python_tool_wrappers() {
+  local tool
+  # The hashed requirements install one shared bundle. Publish every entrypoint
+  # together so an existing system tool cannot hide a freshly installed pin.
+  for tool in ruff pytest yamllint; do
+    {
+      cat <<'WRAPPER'
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
+WRAPPER
+      # shellcheck disable=SC2016 # Variables expand when the wrapper runs.
+      if [[ "$tool" == ruff ]]; then
+        printf 'exec "$PRAGMA_DIR/.venv/bin/ruff" "$@"\n'
+      else
+        printf 'exec "$PRAGMA_DIR/.venv/bin/python" -m %s "$@"\n' "$tool"
+      fi
+    } >"$NATIVE_BIN_DIR/$tool" || return 1
+    chmod +x "$NATIVE_BIN_DIR/$tool" || return 1
+  done
+}
+
 ensure_python_tooling_installed() {
   $PYTHON_TOOLING_INSTALLED && return 0
   local requirements_file="$PRAGMA_DIR/tools/requirements/python.txt"
@@ -190,6 +212,7 @@ ensure_python_tooling_installed() {
 
   python3 -m venv "$venv_dir" || return 1
   "$venv_dir/bin/python" -m pip install --quiet --require-hashes -r "$requirements_file" || return 1
+  write_python_tool_wrappers || return 1
   PYTHON_TOOLING_INSTALLED=true
 }
 
@@ -432,13 +455,6 @@ install_yamllint() {
   if has_tool python3; then
     log_info "Installing yamllint via pinned Python requirements..."
     ensure_python_tooling_installed || return 1
-    cat >"$BIN_DIR/yamllint" <<'WRAPPER'
-#!/usr/bin/env bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
-exec "$PRAGMA_DIR/.venv/bin/python" -m yamllint "$@"
-WRAPPER
-    chmod +x "$BIN_DIR/yamllint"
   else
     log_warn "yamllint requires python3 — skipping"
     return 1
@@ -530,26 +546,12 @@ install_taplo() {
 
 install_pytest() {
   ensure_python_tooling_installed || return 1
-  cat >"$BIN_DIR/pytest" <<'WRAPPER'
-#!/usr/bin/env bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
-exec "$PRAGMA_DIR/.venv/bin/python" -m pytest "$@"
-WRAPPER
-  chmod +x "$BIN_DIR/pytest"
 }
 
 install_ruff() {
   if has_tool python3; then
     log_info "Installing ruff via pinned Python requirements..."
     ensure_python_tooling_installed || return 1
-    cat >"$BIN_DIR/ruff" <<'WRAPPER'
-#!/usr/bin/env bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
-exec "$PRAGMA_DIR/.venv/bin/ruff" "$@"
-WRAPPER
-    chmod +x "$BIN_DIR/ruff"
   else
     log_warn "ruff requires python3 — skipping"
     return 1
