@@ -6,7 +6,8 @@
 
 Language-aware Git hooks for Linux and macOS, powered by
 [prek](https://github.com/j178/prek). Pre-commit formats and lints staged files
-and scans staged changes for secrets. Pre-push runs project typechecks and tests.
+and scans staged changes for secrets. Pre-push runs project typechecks and
+tests.
 
 ## Install
 
@@ -38,9 +39,9 @@ export PATH="$HOME/.local/bin:$PATH"
 Set `PRAGMA_GLOBAL_BIN_DIR` to use another core installation directory. Core
 installation uses release binaries and does not require Node or Go.
 
-Language tools use project selections first, followed by your active `PATH`
-and Pragma's pinned fallbacks. Install your project's dependencies before
-bootstrap. See [Tool selection](#tool-selection) for the supported selections.
+Language tools use project selections first, followed by your active `PATH` and
+Pragma's pinned fallbacks. Install your project's dependencies before bootstrap.
+See [Tool selection](#tool-selection) for the supported selections.
 
 To install hooks for Pragma itself, run `./install.sh --agent .` from this
 checkout. Self-install keeps the existing `prek.toml` unchanged and requires it
@@ -77,8 +78,8 @@ commit again. Hooks leave the Git index unchanged.
 Pre-push runs test suites for detected Go, Rust, JavaScript, TypeScript, and
 Python projects. For JavaScript and TypeScript, a repository-root
 `scripts.typecheck` command runs before tests when declared in `package.json`.
-Bun projects use `bun run typecheck`; other projects use `npm run typecheck`.
-A failing typecheck blocks the push, including in projects without a test script.
+Bun projects use `bun run typecheck`; other projects use `npm run typecheck`. A
+failing typecheck blocks the push, including in projects without a test script.
 
 | Language              | Formatter                    | Linter             | Test runner             |
 | --------------------- | ---------------------------- | ------------------ | ----------------------- |
@@ -100,9 +101,14 @@ manifests.
 
 Golangci-lint v2 is required. Go templ files (`.templ`) are ignored.
 
+Rust formatting uses each package's Cargo edition, including workspace
+inheritance. Packages without an edition use Rust 2015; standalone files use
+Rust 2021.
+
 Oxlint checks JavaScript and TypeScript files with `--deny-warnings`. It uses
 your project's Oxlint configuration and does not apply fixes. Existing ESLint
-configurations need [migration to Oxlint](https://oxc.rs/docs/guide/usage/linter/migrate-from-eslint.html).
+configurations need
+[migration to Oxlint](https://oxc.rs/docs/guide/usage/linter/migrate-from-eslint.html).
 
 HTML files containing template delimiters such as `{{ ... }}`, `{% ... %}`, or
 `{# ... #}` skip HTML formatting. Plain HTML, including HTMX attributes, uses
@@ -120,7 +126,8 @@ Hooks and the installer prefer these project selections:
   is `UV_PROJECT_ENVIRONMENT` when set, or the repository root's `.venv`.
   Pragma's own fallback virtualenv is excluded.
 - Go module `tool` directives for goimports and golangci-lint v2, invoked with
-  [`go tool`](https://go.dev/ref/mod#go-mod-file-tool) from each module directory.
+  [`go tool`](https://go.dev/ref/mod#go-mod-file-tool) from each module
+  directory.
 
 Without a project selection, tools on your active `PATH` take precedence over
 Pragma's pinned fallbacks. Toolchain managers can select Go, Rust, and Node
@@ -149,14 +156,15 @@ Most fallback tools use prebuilt release binaries. The remaining requirements
 are:
 
 - goimports builds from Pragma's pinned Go module and needs Go 1.26 or newer.
-- Prettier and Oxlint use Pragma's `package-lock.json` through `npm ci`.
-  The fallback Oxlint needs Node 20.19+ or 22.12+.
+- Prettier and Oxlint use Pragma's `package-lock.json` through `npm ci`. The
+  fallback Oxlint needs Node 20.19+ or 22.12+.
 - Ruff, yamllint, and pytest use hashed requirements in Pragma's `.venv`.
-  Installation needs Python 3.10+ with `venv` support.
+  Installation needs Python 3.10+ with `venv` support. Installing any Python
+  fallback exposes all three pinned tools in `<pragma>/bin`.
 - Rust components use your installed rustup toolchain.
 
-Downloads require `curl` and a SHA-256 checksum utility. Archive extraction
-also needs `tar`, `gunzip`, or `xz`, depending on the tool.
+Downloads require `curl` and a SHA-256 checksum utility. Archive extraction also
+needs `tar`, `gunzip`, or `xz`, depending on the tool.
 
 ## Effect projects
 
@@ -177,10 +185,10 @@ Declare the project's typecheck command in `package.json`, for example:
 }
 ```
 
-Use the compiler command and project configurations your repository needs.
-For a monorepo, let the root script check all packages. Pragma runs this script
-before tests on pre-push and leaves compiler versions and Effect rules to the
-project. Editor diagnostics alone do not run during a push.
+Use the compiler command and project configurations your repository needs. For a
+monorepo, let the root script check all packages. Pragma runs this script before
+tests on pre-push and leaves compiler versions and Effect rules to the project.
+Editor diagnostics alone do not run during a push.
 
 ## Cache a ts-rust shadow check
 
@@ -198,8 +206,8 @@ compiler options as the normal typecheck. For example:
 ```
 
 For repeated comparisons, disable incremental caching in both scripts when
-supported, or use separate compiler caches. Use separate output directories
-if your typecheck scripts emit files.
+supported, or use separate compiler caches. Use separate output directories if
+your typecheck scripts emit files.
 
 Enable shadow capture for one push:
 
@@ -215,17 +223,18 @@ git config --local pragma.shadow true
 
 `PRAGMA_SHADOW=0` overrides the local setting. To run checks directly, use
 `~/.pragma/lib/test.sh --shadow` from the project. The shadow runs after the
-normal typecheck, including when the normal check fails. Only the normal
-check decides whether typechecking blocks the push. Tests run after a passing
-normal check. Pragma does not install shadow dependencies during a hook.
-Projects without a normal `typecheck` script report a skip and do not create a comparison.
+normal typecheck, including when the normal check fails. Only the normal check
+decides whether typechecking blocks the push. Tests run after a passing normal
+check. Pragma does not install shadow dependencies during a hook. Projects
+without a normal `typecheck` script report a skip and do not create a
+comparison.
 
 Every enabled run retains both checks' full stdout and stderr, even when they
 succeed or agree. Each run has a unique directory under
 `git rev-parse --git-path pragma/shadow`. Linked worktrees use their own Git
-metadata directory. Set `PRAGMA_SHADOW_CACHE_DIR` to use another location.
-Use a dedicated cache directory. Receipts remain local until you remove them.
-Pragma never submits findings upstream or dumps your full environment.
+metadata directory. Set `PRAGMA_SHADOW_CACHE_DIR` to use another location. Use a
+dedicated cache directory. Receipts remain local until you remove them. Pragma
+never submits findings upstream or dumps your full environment.
 
 Each receipt contains:
 
@@ -233,9 +242,9 @@ Each receipt contains:
   `shadow.stderr.log`, with complete output and hashes recorded in metadata.
 - `metadata.json`, with commands, script definitions, exit codes, signals,
   timestamps, timings, compiler and package versions, Pragma version and source
-  hashes, host information, runtime paths, and Git HEAD, branch, status, and tree before
-  and after the checks. Git status and input hashes exclude the capture cache
-  itself. An unborn repository records a null HEAD.
+  hashes, host information, runtime paths, and Git HEAD, branch, status, and
+  tree before and after the checks. Git status and input hashes exclude the
+  capture cache itself. An unborn repository records a null HEAD.
 - `git-staged.patch` and `git-worktree.patch`, including binary changes.
 - `inputs-before.json` and `inputs-after.json`, with hashes of Git-listed
   JavaScript, TypeScript, and compiler configuration inputs. Ignored generated
@@ -246,17 +255,18 @@ Each receipt contains:
 
 Direct shadow runs print the receipt path. Prek can hide output from passing
 hooks; inspect the cache directory after a push. Different nonzero exit codes
-alone do not count as a mismatch. Findings are candidates for investigation, since
-compiler versions, Effect rule versions, and script options can differ.
+alone do not count as a mismatch. Findings are candidates for investigation,
+since compiler versions, Effect rule versions, and script options can differ.
 Configure `--pretty false` in both scripts for consistent diagnostic parsing.
 Raw outputs remain available when a failure cannot be parsed.
 
 The shadow has a 120-second timeout. Set `PRAGMA_SHADOW_TIMEOUT_SECONDS` to a
-positive number up to 2147483.647 to change it. A timeout stops the shadow process group and
-retains its output. It does not block a passing normal check. Cache setup
-errors are reported, and the normal typecheck still runs. An interrupted
-capture can leave a receipt with `state: "running"` and incomplete results.
-Cancelling with SIGINT or SIGTERM stops the active compiler process group.
+positive number up to 2147483.647 to change it. A timeout stops the shadow
+process group and retains its output. It does not block a passing normal check.
+Cache setup errors are reported, and the normal typecheck still runs. An
+interrupted capture can leave a receipt with `state: "running"` and incomplete
+results. Cancelling with SIGINT or SIGTERM stops the active compiler process
+group.
 
 ## Update an existing install
 
@@ -274,8 +284,8 @@ cd /path/to/your-repo
 ~/.pragma/install.sh --agent .
 ```
 
-`--update` preserves installed project tools and Go module tool declarations.
-It does not change project dependency versions.
+`--update` preserves installed project tools and Go module tool declarations. It
+does not change project dependency versions.
 
 Existing `.gitleaks.toml` rules are not converted automatically. Move custom
 rules to Kingfisher's YAML configuration before retiring that file. Bootstrap
@@ -309,8 +319,8 @@ PRAGMA_HOME=/path/to/pragma prek run --all-files
 
 Kingfisher scans staged changes with two workers. It redacts findings and
 disables credential validation and update checks. A finding or scanner error
-blocks the commit. The first scan can take longer while rules compile, and
-later scans reuse Kingfisher's rule cache.
+blocks the commit. The first scan can take longer while rules compile, and later
+scans reuse Kingfisher's rule cache.
 
 Bootstrap copies `kingfisher.yaml` into the target repository if it is absent.
 The hook loads that file explicitly, using Pragma's defaults when it is missing.
@@ -373,8 +383,8 @@ Core tools and Pragma's checkout remain available for other repositories.
 
 ## Run the checks
 
-Checks need Git, Go 1.26+, and npm with a Node version supported by the fallback
-Oxlint. From the Pragma checkout:
+Checks need Git, Go 1.26+, rustfmt with Rust 2024 support, and npm with a Node
+version supported by the fallback Oxlint. From the Pragma checkout:
 
 ```bash
 PRAGMA_INSTALL_ONLY_TOOLS="prek kingfisher goimports golangci-lint prettier oxlint shfmt shellcheck yamllint" \

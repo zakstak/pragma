@@ -119,3 +119,37 @@ if PRAGMA_INSTALL_ONLY_TOOLS=ruff bash "$copy/tools/install-tools.sh" --global -
   exit 1
 fi
 printf 'PASS: global mode rejects language tools\n'
+
+# Installing one Python fallback must expose the complete pinned bundle, even
+# when older system entrypoints are already available.
+mkdir -p "$active" "$tmp_dir/unselected-python"
+cat >"$active/python3" <<'PYTHON'
+#!/bin/sh
+[ "$1" = -m ] && [ "$2" = venv ] || exit 2
+mkdir -p "$3/bin"
+cat >"$3/bin/python" <<'RUNTIME'
+#!/bin/sh
+[ "$1" = -m ] || exit 2
+case "$2" in
+  pip) exit 0 ;;
+  pytest | yamllint) printf 'pinned-%s\n' "$2" ;;
+  *) exit 2 ;;
+esac
+RUNTIME
+printf '#!/bin/sh\nprintf "pinned-ruff\\n"\n' >"$3/bin/ruff"
+chmod +x "$3/bin/python" "$3/bin/ruff"
+PYTHON
+chmod +x "$active/python3"
+cd "$tmp_dir/unselected-python"
+git init -q
+PRAGMA_INSTALL_ONLY_TOOLS=yamllint bash "$copy/tools/install-tools.sh" --agent --update >"$tmp_dir/python-install.log"
+for tool in ruff pytest yamllint; do
+  [[ -x "$copy/bin/$tool" ]]
+  [[ "$(PATH="$copy/bin:$PATH" pragma_exec "$tool")" == "pinned-$tool" ]]
+done
+printf 'PASS: Python bundle installation exposes every pinned wrapper ahead of system tools when selected on PATH\n'
+# A declared project environment keeps ownership even when pinned wrappers lead PATH.
+mkdir -p .venv/bin
+marker_tool "$PWD/.venv/bin/ruff" project-ruff
+[[ "$(PATH="$copy/bin:$PATH" pragma_exec ruff)" == project-ruff ]]
+printf 'PASS: project Python tools still override the installed pinned bundle\n'
