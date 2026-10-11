@@ -149,7 +149,7 @@ EOF
 output="$(cd "$tmp_dir" && bash "$repo_copy/install.sh" --agent "$repo_copy" 2>&1)"
 
 assert_contains "Self-install keeps repo-local config" "Self-install detected; keeping repo-local prek.toml" "$output"
-assert_contains "Tool detection uses target repo" "Detected languages: json markdown shell toml yaml" "$output"
+assert_contains "Tool detection uses target repo" "Detected languages: json markdown shell toml typescript yaml" "$output"
 assert_not_contains "Caller cwd does not leak into detection" "Detected languages: go" "$output"
 
 if cmp -s "$tmp_dir/original-prek.toml" "$repo_copy/prek.toml"; then

@@ -6,7 +6,7 @@
 
 Language-aware Git hooks for Linux and macOS, powered by
 [prek](https://github.com/j178/prek). Pre-commit formats and lints staged files
-and scans staged changes for secrets. Pre-push runs project tests.
+and scans staged changes for secrets. Pre-push runs project typechecks and tests.
 
 ## Install
 
@@ -75,13 +75,16 @@ formatting changes files, the commit stops. Review the changes, stage them, and
 commit again. Hooks leave the Git index unchanged.
 
 Pre-push runs test suites for detected Go, Rust, JavaScript, TypeScript, and
-Python projects.
+Python projects. For JavaScript and TypeScript, a repository-root
+`scripts.typecheck` command runs before tests when declared in `package.json`.
+Bun projects use `bun run typecheck`; other projects use `npm run typecheck`.
+A failing typecheck blocks the push, including in projects without a test script.
 
 | Language              | Formatter                    | Linter             | Test runner             |
 | --------------------- | ---------------------------- | ------------------ | ----------------------- |
 | Go                    | `goimports` / `gofmt`        | `golangci-lint` v2 | `go test ./...`         |
 | Rust                  | `rustfmt`                    | `clippy`           | `cargo test`            |
-| JavaScript/TypeScript | `prettier`                   | `eslint`           | `bun test` / `npm test` |
+| JavaScript/TypeScript | `prettier`                   | `oxlint`           | `bun test` / `npm test` |
 | HTML                  | `prettier` (plain HTML only) | —                  | —                       |
 | YAML                  | `prettier`                   | `yamllint`         | —                       |
 | Dockerfiles           | —                            | `hadolint`         | —                       |
@@ -97,6 +100,10 @@ manifests.
 
 Golangci-lint v2 is required. Go templ files (`.templ`) are ignored.
 
+Oxlint checks JavaScript and TypeScript files with `--deny-warnings`. It uses
+your project's Oxlint configuration and does not apply fixes. Existing ESLint
+configurations need [migration to Oxlint](https://oxc.rs/docs/guide/usage/linter/migrate-from-eslint.html).
+
 HTML files containing template delimiters such as `{{ ... }}`, `{% ... %}`, or
 `{# ... #}` skip HTML formatting. Plain HTML, including HTMX attributes, uses
 Prettier.
@@ -108,7 +115,7 @@ Core binaries are shared across Pragma checkouts in `~/.local/bin`, or
 
 Hooks and the installer prefer these project selections:
 
-- Prettier and ESLint from the repository root's `node_modules/.bin`.
+- Prettier and Oxlint from the repository root's `node_modules/.bin`.
 - Python, pytest, Ruff, and yamllint from `<environment>/bin`. The environment
   is `UV_PROJECT_ENVIRONMENT` when set, or the repository root's `.venv`.
   Pragma's own fallback virtualenv is excluded.
@@ -119,7 +126,7 @@ Without a project selection, tools on your active `PATH` take precedence over
 Pragma's pinned fallbacks. Toolchain managers can select Go, Rust, and Node
 through `PATH` and their project configuration.
 
-A Prettier or ESLint dependency declared in `package.json` but absent from
+A Prettier or Oxlint dependency declared in `package.json` but absent from
 `node_modules/.bin` causes an error. Hooks do not install npm dependencies or
 fetch tools through `npx`.
 
@@ -142,14 +149,114 @@ Most fallback tools use prebuilt release binaries. The remaining requirements
 are:
 
 - goimports builds from Pragma's pinned Go module and needs Go 1.26 or newer.
-- Prettier and ESLint use Pragma's `package-lock.json` through `npm ci`.
-  The fallback ESLint v10 needs Node 20.19+, 22.13+, or 24+.
+- Prettier and Oxlint use Pragma's `package-lock.json` through `npm ci`.
+  The fallback Oxlint needs Node 20.19+ or 22.12+.
 - Ruff, yamllint, and pytest use hashed requirements in Pragma's `.venv`.
   Installation needs Python 3.10+ with `venv` support.
 - Rust components use your installed rustup toolchain.
 
 Downloads require `curl` and a SHA-256 checksum utility. Archive extraction
 also needs `tar`, `gunzip`, or `xz`, depending on the tool.
+
+## Effect projects
+
+Keep Effect tooling and TypeScript pinned in the project. For the native
+`@effect/tsgo` integration, install a compatible TypeScript 7 toolchain,
+`oxlint`, and `oxlint-tsgolint`. Follow the
+[Effect Oxlint setup](https://effect.website/docs/v4/getting-started/devtools#oxlint)
+to configure the plugin, patch the project tools, and extend the recommended
+preset. Pragma runs the project's patched Oxlint and reads its configuration.
+
+Declare the project's typecheck command in `package.json`, for example:
+
+```json
+{
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
+```
+
+Use the compiler command and project configurations your repository needs.
+For a monorepo, let the root script check all packages. Pragma runs this script
+before tests on pre-push and leaves compiler versions and Effect rules to the
+project. Editor diagnostics alone do not run during a push.
+
+## Cache a ts-rust shadow check
+
+Install and pin [`tsc-rs`](https://github.com/pingdotgg/ts-rust) in the target
+project. Declare a shadow script that uses the same project configurations and
+compiler options as the normal typecheck. For example:
+
+```json
+{
+  "scripts": {
+    "typecheck": "tsc --noEmit --pretty false -p tsconfig.json",
+    "typecheck:shadow": "tsc-rs --noEmit --pretty false -p tsconfig.json"
+  }
+}
+```
+
+For repeated comparisons, disable incremental caching in both scripts when
+supported, or use separate compiler caches. Use separate output directories
+if your typecheck scripts emit files.
+
+Enable shadow capture for one push:
+
+```bash
+PRAGMA_SHADOW=1 git push
+```
+
+To enable it for future pushes in this clone:
+
+```bash
+git config --local pragma.shadow true
+```
+
+`PRAGMA_SHADOW=0` overrides the local setting. To run checks directly, use
+`~/.pragma/lib/test.sh --shadow` from the project. The shadow runs after the
+normal typecheck, including when the normal check fails. Only the normal
+check decides whether typechecking blocks the push. Tests run after a passing
+normal check. Pragma does not install shadow dependencies during a hook.
+Projects without a normal `typecheck` script report a skip and do not create a comparison.
+
+Every enabled run retains both checks' full stdout and stderr, even when they
+succeed or agree. Each run has a unique directory under
+`git rev-parse --git-path pragma/shadow`. Linked worktrees use their own Git
+metadata directory. Set `PRAGMA_SHADOW_CACHE_DIR` to use another location.
+Use a dedicated cache directory. Receipts remain local until you remove them.
+Pragma never submits findings upstream or dumps your full environment.
+
+Each receipt contains:
+
+- `baseline.stdout.log`, `baseline.stderr.log`, `shadow.stdout.log`, and
+  `shadow.stderr.log`, with complete output and hashes recorded in metadata.
+- `metadata.json`, with commands, script definitions, exit codes, signals,
+  timestamps, timings, compiler and package versions, Pragma version and source
+  hashes, host information, runtime paths, and Git HEAD, branch, status, and tree before
+  and after the checks. Git status and input hashes exclude the capture cache
+  itself. An unborn repository records a null HEAD.
+- `git-staged.patch` and `git-worktree.patch`, including binary changes.
+- `inputs-before.json` and `inputs-after.json`, with hashes of Git-listed
+  JavaScript, TypeScript, and compiler configuration inputs. Ignored generated
+  sources are excluded. `inputs/` retains copies of configs and lockfiles.
+- `findings.json`, with normalized TypeScript diagnostic differences, outcome
+  differences, crashes, timeouts, and changes to the repository during the run.
+- `report.md` and `notes.md`, for reviewing and recording local observations.
+
+Direct shadow runs print the receipt path. Prek can hide output from passing
+hooks; inspect the cache directory after a push. Different nonzero exit codes
+alone do not count as a mismatch. Findings are candidates for investigation, since
+compiler versions, Effect rule versions, and script options can differ.
+Configure `--pretty false` in both scripts for consistent diagnostic parsing.
+Raw outputs remain available when a failure cannot be parsed.
+
+The shadow has a 120-second timeout. Set `PRAGMA_SHADOW_TIMEOUT_SECONDS` to a
+positive number up to 2147483.647 to change it. A timeout stops the shadow process group and
+retains its output. It does not block a passing normal check. Cache setup
+errors are reported, and the normal typecheck still runs. An interrupted
+capture can leave a receipt with `state: "running"` and incomplete results.
+Cancelling with SIGINT or SIGTERM stops the active compiler process group.
 
 ## Update an existing install
 
@@ -250,7 +357,7 @@ PRAGMA_OUTPUT_FORMAT=human git push
 git commit --no-verify
 git push --no-verify
 
-# Skip pre-push tests
+# Skip pre-push typechecking and tests
 PRAGMA_SKIP_TESTS=1 git push
 ```
 
@@ -267,10 +374,10 @@ Core tools and Pragma's checkout remain available for other repositories.
 ## Run the checks
 
 Checks need Git, Go 1.26+, and npm with a Node version supported by the fallback
-ESLint. From the Pragma checkout:
+Oxlint. From the Pragma checkout:
 
 ```bash
-PRAGMA_INSTALL_ONLY_TOOLS="prek kingfisher goimports golangci-lint prettier shfmt shellcheck yamllint" \
+PRAGMA_INSTALL_ONLY_TOOLS="prek kingfisher goimports golangci-lint prettier oxlint shfmt shellcheck yamllint" \
   ./tools/install-tools.sh --agent
 export PATH="${PRAGMA_GLOBAL_BIN_DIR:-$HOME/.local/bin}:$PATH"
 ./tools/check.sh
@@ -278,8 +385,9 @@ export PATH="${PRAGMA_GLOBAL_BIN_DIR:-$HOME/.local/bin}:$PATH"
 
 Checks use temporary repositories and a local Git remote. They exercise real
 commits and pushes, formatter changes, lint and secret rejection, passing and
-failing Go and npm tests, tool precedence, and preservation of project versions
-during updates.
+failing typechecks, Go and npm tests, tool precedence, preservation of project
+versions during updates, and shadow capture across successes, differences,
+crashes, timeouts, and linked worktrees.
 
 ## Maintain fallback versions
 
@@ -312,7 +420,8 @@ pragma/
 │   ├── format.sh        # Formatter dispatch
 │   ├── lint.sh          # Linter dispatch
 │   ├── secrets.sh       # Kingfisher invocation
-│   └── test.sh          # Test runner dispatch
+│   ├── test.sh          # Project typecheck and test dispatch
+│   └── shadow.js        # Local compiler comparison receipts
 ├── tools/
 │   ├── check.sh         # Repository checks
 │   ├── install-tools.sh # Missing tool installation

@@ -20,12 +20,12 @@ for tool in prek kingfisher; do
   marker_tool "$PRAGMA_GLOBAL_BIN_DIR/$tool" "global-$tool"
   marker_tool "$copy/bin/$tool" "old-$tool"
 done
-for tool in prettier eslint ruff pytest yamllint python golangci-lint; do
+for tool in prettier oxlint ruff pytest yamllint python golangci-lint; do
   marker_tool "$active/$tool" "active-$tool"
   marker_tool "$copy/bin/$tool" "fallback-$tool"
 done
 marker_tool "$repo/node_modules/.bin/prettier" project-prettier
-marker_tool "$repo/node_modules/.bin/eslint" project-eslint
+marker_tool "$repo/node_modules/.bin/oxlint" project-oxlint
 for tool in ruff pytest yamllint python; do
   marker_tool "$repo/.venv/bin/$tool" "project-$tool"
 done
@@ -36,7 +36,7 @@ for tool in prek kingfisher; do
   [[ "$(pragma_exec "$tool")" == "global-$tool" ]]
 done
 printf 'PASS: global core overrides old checkout binaries\n'
-for tool in prettier eslint ruff pytest yamllint python; do
+for tool in prettier oxlint ruff pytest yamllint python; do
   [[ "$(pragma_exec "$tool")" == "project-$tool" ]]
 done
 printf 'PASS: project npm and Python tools precede active and fallback versions\n'
@@ -46,21 +46,23 @@ mkdir -p "$repo/custom-env/bin"
 marker_tool "$repo/custom-env/bin/ruff" custom-ruff
 [[ "$(UV_PROJECT_ENVIRONMENT=custom-env pragma_exec ruff)" == custom-ruff ]]
 printf 'PASS: custom uv project environment is respected\n'
-printf '{"devDependencies":{"prettier":"3.0.0","eslint":"9.0.0"}}\n' >package.json
-output="$(PRAGMA_INSTALL_ONLY_TOOLS='prettier eslint ruff' bash "$copy/tools/install-tools.sh" --agent --update)"
+printf '{"devDependencies":{"prettier":"3.0.0","oxlint":"1.0.0"}}\n' >package.json
+output="$(PRAGMA_INSTALL_ONLY_TOOLS='prettier oxlint ruff' bash "$copy/tools/install-tools.sh" --agent --update)"
 [[ "$output" == *'uses the project selection'* ]]
 [[ "$(pragma_exec prettier)" == project-prettier ]]
 printf 'PASS: update preserves project selections without fallback installation\n'
-rm node_modules/.bin/prettier
-if pragma_exec prettier >"$tmp_dir/missing.log" 2>&1; then
-  printf 'FAIL: missing declared prettier used another version\n'
-  exit 1
-fi
-if PRAGMA_INSTALL_ONLY_TOOLS=prettier bash "$copy/tools/install-tools.sh" --agent >"$tmp_dir/install.log" 2>&1; then
-  printf 'FAIL: installer replaced a missing declared project tool\n'
-  exit 1
-fi
-rg -q 'dependencies first' "$tmp_dir/install.log"
+for tool in prettier oxlint; do
+  rm "node_modules/.bin/$tool"
+  if pragma_exec "$tool" >"$tmp_dir/missing.log" 2>&1; then
+    printf 'FAIL: missing declared %s used another version\n' "$tool"
+    exit 1
+  fi
+  if PRAGMA_INSTALL_ONLY_TOOLS="$tool" bash "$copy/tools/install-tools.sh" --agent >"$tmp_dir/install.log" 2>&1; then
+    printf 'FAIL: installer replaced a missing declared project tool: %s\n' "$tool"
+    exit 1
+  fi
+  rg -q 'dependencies first' "$tmp_dir/install.log"
+done
 printf 'PASS: missing declared npm tools fail instead of using fallback versions\n'
 printf '{}\n' >package.json
 [[ "$(pragma_exec prettier)" == active-prettier ]]

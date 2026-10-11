@@ -42,11 +42,11 @@ pragma_go_tool_package() {
 pragma_project_tool_path() {
   local tool="$1" root candidate
   case "$tool" in
-    prettier | eslint | python | pytest | ruff | yamllint) root="$(pragma_project_root)" ;;
+    prettier | oxlint | python | pytest | ruff | yamllint) root="$(pragma_project_root)" ;;
     *) return 1 ;;
   esac
   case "$tool" in
-    prettier | eslint)
+    prettier | oxlint)
       candidate="$root/node_modules/.bin/$tool"
       if [[ -x "$candidate" ]]; then
         printf '%s\n' "$candidate"
@@ -116,7 +116,7 @@ pragma_exec() {
     return $?
   fi
   case "$tool" in
-    prek | kingfisher | prettier | eslint | python | pytest | ruff | yamllint | golangci-lint)
+    prek | kingfisher | prettier | oxlint | python | pytest | ruff | yamllint | golangci-lint)
       path="$(pragma_tool_path "$tool")" || {
         printf 'Cannot resolve %s; install the project dependencies or Pragma fallback tools.\n' "$tool" >&2
         return 1

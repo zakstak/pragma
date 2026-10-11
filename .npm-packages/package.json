@@ -2,10 +2,10 @@
   "name": "pragma-npm-tools",
   "private": true,
   "dependencies": {
-    "eslint": "10.12.0",
+    "oxlint": "1.87.0",
     "prettier": "3.9.10"
   },
   "engines": {
-    "node": "^20.19.0 || ^22.13.0 || >=24"
+    "node": "^20.19.0 || >=22.12.0"
   }
 }

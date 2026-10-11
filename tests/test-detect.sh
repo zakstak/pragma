@@ -150,6 +150,7 @@ log_header "detect_from_repo (in pragma dir)"
 # Run from pragma repo — should detect at least shell and markdown
 result=$(cd "$SCRIPT_DIR/.." && detect_from_repo)
 assert_contains "Pragma repo: shell" "shell" "$result"
+assert_contains "Pragma repo: JavaScript tooling" "typescript" "$result"
 assert_contains "Pragma repo: markdown" "markdown" "$result"
 assert_contains "Pragma repo: toml" "toml" "$result"
 assert_contains "Pragma ships v2 Go YAML config" "yaml" "$result"
@@ -159,7 +160,7 @@ mkdir -p "$portable_repo/src/level2" "$portable_repo/src/level2/level3" "$portab
 touch "$portable_repo/src/level2/app.py"
 touch "$portable_repo/src/level2/view.templ"
 touch "$portable_repo/src/level2/level3/ignored.sh"
-touch "$portable_repo/node_modules/pkg/ignored.json"
+touch "$portable_repo/node_modules/pkg/ignored.json" "$portable_repo/node_modules/pkg/ignored.ts"
 touch "$portable_repo/frontend/node_modules/pkg/nested.json"
 touch "$portable_repo/.git/info/ignored.yaml"
 
@@ -168,8 +169,13 @@ assert_contains "Portable repo scan includes files within depth 3" "python" "$re
 assert_not_contains "Portable repo scan ignores Go templ files" "templ" "$result"
 assert_not_contains "Portable repo scan excludes files deeper than depth 3" "shell" "$result"
 assert_not_contains "Portable repo scan excludes node_modules matches" "json" "$result"
+assert_not_contains "Portable repo scan excludes dependency TypeScript files" "typescript" "$result"
 assert_not_contains "Portable repo scan excludes nested node_modules matches" "json" "$result"
 assert_not_contains "Portable repo scan excludes .git matches" "yaml" "$result"
+
+touch "$portable_repo/src/helper.js"
+result=$(cd "$portable_repo" && detect_from_repo)
+assert_contains "Source-only JavaScript projects get language tools" "typescript" "$result"
 
 venv_repo="$tmp_dir/venv-detect"
 mkdir -p "$venv_repo/.venv/bin"

@@ -18,6 +18,8 @@ done
 
 shellcheck -e SC2329 -x -P SCRIPTDIR "${scripts[@]}"
 shfmt -d -i 2 -ci "${scripts[@]}"
+node --check lib/shadow.js
+oxlint --deny-warnings lib/shadow.js
 
 for test_script in tests/*.sh; do
   printf '\nRunning %s\n' "$test_script"
