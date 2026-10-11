@@ -1,6 +1,9 @@
 ---
 version: "2"
 
+run:
+  allow-serial-runners: true
+
 formatters:
   enable:
     - goimports
