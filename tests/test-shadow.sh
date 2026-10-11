@@ -66,7 +66,7 @@ chmod +x "$tmp_dir/bin/npm"
 export PATH="$tmp_dir/bin:$PATH"
 export TEST_COMMANDS="$tmp_dir/commands"
 export PRAGMA_OUTPUT_FORMAT=gpt PRAGMA_SKIP_INTERNAL_BIN_PATH=1
-unset PRAGMA_SKIP_TESTS PRAGMA_SHADOW PRAGMA_SHADOW_CACHE_DIR PRAGMA_SHADOW_TIMEOUT_SECONDS
+unset PRAGMA_SKIP_TESTS PRAGMA_SHADOW PRAGMA_SHADOW_CACHE_DIR PRAGMA_SHADOW_SHARED PRAGMA_SHADOW_TIMEOUT_SECONDS
 cd "$repo"
 printf '{"scripts":{"typecheck":"tsc --noEmit","typecheck:shadow":"tsc-rs --noEmit","test":"node test.js"}}\n' >package.json
 printf '{"compilerOptions":{"strict":true}}\n' >tsconfig.json

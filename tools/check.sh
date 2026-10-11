@@ -10,6 +10,9 @@ fi
 PRAGMA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PRAGMA_DIR"
 export PATH="$PRAGMA_DIR/bin:$PATH"
+# Temporary repositories must not inherit a developer's shared cache or Git defaults.
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+unset PRAGMA_SHADOW_CACHE_DIR PRAGMA_SHADOW_SHARED
 
 scripts=(install.sh lib/*.sh tools/*.sh tests/*.sh)
 for script in "${scripts[@]}"; do
