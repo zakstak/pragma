@@ -34,3 +34,12 @@ language = "script"
 pass_filenames = false
 always_run = true
 stages = ["pre-push"]
+
+[[repos.hooks]]
+id = "pragma-shadow"
+name = "ts-rust shadow"
+entry = "./lib/shadow.sh"
+language = "script"
+pass_filenames = false
+always_run = true
+stages = ["pre-push"]

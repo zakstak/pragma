@@ -124,6 +124,7 @@ generate_target_wrappers() {
   write_hook_wrapper lint.sh
   write_hook_wrapper secrets.sh
   write_hook_wrapper test.sh
+  write_hook_wrapper shadow.sh
 }
 
 remove_stale_lefthook_shim() {
@@ -192,6 +193,15 @@ generate_config() {
     printf 'id = "test"\n'
     printf 'name = "test"\n'
     printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path test.sh)")"
+    printf 'language = "script"\n'
+    printf 'pass_filenames = false\n'
+    printf 'always_run = true\n'
+    printf 'stages = ["pre-push"]\n'
+
+    printf '\n[[repos.hooks]]\n'
+    printf 'id = "pragma-shadow"\n'
+    printf 'name = "ts-rust shadow"\n'
+    printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path shadow.sh)")"
     printf 'language = "script"\n'
     printf 'pass_filenames = false\n'
     printf 'always_run = true\n'
@@ -273,7 +283,7 @@ log_success "Pragma is configured for ${BOLD}$TARGET_REPO${RESET}"
 echo ""
 log_info "Hooks installed:"
 echo "  ${GREEN}pre-commit${RESET} → format + lint + kingfisher"
-echo "  ${GREEN}pre-push${RESET}   → project typecheck + tests"
+echo "  ${GREEN}pre-push${RESET}   → project typecheck + tests + ts-rust shadow receipts"
 echo ""
 log_info "To skip hooks temporarily:"
 echo "  git commit --no-verify"

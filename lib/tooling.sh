@@ -79,6 +79,12 @@ pragma_project_tool_path() {
 
 pragma_tool_path() {
   local tool="$1" candidate status
+  if [[ "$tool" == tsc-rs ]]; then
+    candidate="$(pragma_dir)/bin/tsc-rs"
+    [[ -x "$candidate" ]] || return 1
+    printf '%s\n' "$candidate"
+    return 0
+  fi
   if [[ "${PRAGMA_SKIP_INTERNAL_BIN_PATH:-0}" != 1 ]]; then
     if pragma_is_core_tool "$tool"; then
       candidate="$(pragma_global_bin_dir)/$tool"
@@ -116,7 +122,7 @@ pragma_exec() {
     return $?
   fi
   case "$tool" in
-    prek | kingfisher | prettier | oxlint | python | pytest | ruff | yamllint | golangci-lint)
+    prek | kingfisher | prettier | oxlint | python | pytest | ruff | yamllint | golangci-lint | tsc-rs)
       path="$(pragma_tool_path "$tool")" || {
         printf 'Cannot resolve %s; install the project dependencies or Pragma fallback tools.\n' "$tool" >&2
         return 1

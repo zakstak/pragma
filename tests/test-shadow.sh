@@ -81,10 +81,10 @@ run_checks() {
 receipt_path() {
   node -e 'const fs = require("node:fs"); console.log(JSON.parse(fs.readFileSync(process.argv[1], "utf8").split("\n")[0]).cache)' "$tmp_dir/output"
 }
-run_checks
+PRAGMA_SHADOW=0 run_checks
 [[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\ntest' && ! -e .git/pragma/shadow ]]
 printf 'PASS: disabled shadow creates no cache or extra compiler run\n'
-PRAGMA_SHADOW=1 run_checks
+run_checks
 receipt="$(receipt_path)"
 [[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\nrun typecheck:shadow\ntest' ]]
 node - "$receipt" "$head" <<'JS'
@@ -116,7 +116,7 @@ assert.equal(fs.statSync(directory).mode & 0o777, 0o700);
 assert.equal(fs.statSync(path.join(directory, 'metadata.json')).mode & 0o777, 0o600);
 JS
 first_receipt="$receipt"
-printf 'PASS: successful checks cache both full outputs and Git/tool/input metadata privately\n'
+printf 'PASS: default shadow caches both full outputs and Git/tool/input metadata privately\n'
 PRAGMA_SHADOW=1 TEST_SHADOW_FAIL=1 run_checks
 receipt="$(receipt_path)"
 [[ "$receipt" != "$first_receipt" && -f "$first_receipt/metadata.json" ]]
@@ -225,6 +225,10 @@ receipt="$(receipt_path)"
 [[ -f "$receipt/metadata.json" ]]
 PRAGMA_SHADOW=0 run_checks
 [[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\ntest' ]]
+git config --local pragma.shadow invalid
+run_checks
+[[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\ntest' ]]
+rg -q 'local pragma.shadow must be a Git boolean' "$tmp_dir/output"
 git config --local --unset pragma.shadow
 PRAGMA_SHADOW_CACHE_DIR="$tmp_dir/custom cache" run_checks --shadow
 receipt="$(receipt_path)"
@@ -240,6 +244,28 @@ PRAGMA_SHADOW=1 PRAGMA_SHADOW_CACHE_DIR="$tmp_dir/unwritable-cache" run_checks
 [[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\ntest' ]]
 rg -q 'Shadow capture unavailable' "$tmp_dir/output"
 printf 'PASS: cache setup failure preserves the normal typecheck gate\n'
+printf '\n[[repos.hooks]]\nid = "pragma-shadow"\n' >prek.toml
+run_checks
+[[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\ntest' ]]
+run_checks --shadow-only
+receipt="$(receipt_path)"
+[[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\nrun typecheck:shadow' ]]
+TEST_BASELINE_FAIL=1 run_checks --shadow-only
+[[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\nrun typecheck:shadow' ]]
+PRAGMA_SHADOW=invalid run_checks --shadow-only
+[[ ! -s "$TEST_COMMANDS" ]]
+run_checks --shadow
+receipt="$(receipt_path)"
+[[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\nrun typecheck:shadow\ntest' ]]
+rm prek.toml
+printf 'PASS: dedicated hook avoids inline duplication, remains advisory, and explicit --shadow retains normal gates\n'
+if PRAGMA_SHADOW_CACHE_DIR="$tmp_dir" TEST_BASELINE_FAIL=1 run_checks; then
+  printf 'FAIL: ancestor shadow cache bypassed the normal typecheck\n'
+  exit 1
+fi
+[[ "$(cat "$TEST_COMMANDS")" == 'run typecheck' ]]
+rg -q 'TS2322' "$tmp_dir/output"
+printf 'PASS: an ancestor cache cannot hide or bypass the mandatory project typecheck\n'
 worktree="$tmp_dir/linked worktree"
 git worktree add -q -b linked "$worktree"
 (cd "$worktree" && PRAGMA_SHADOW=1 run_checks)
