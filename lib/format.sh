@@ -119,6 +119,88 @@ format_go() {
   done
 }
 
+# Read only edition-related manifest keys; no language-tool runtime is needed.
+rust_manifest_setting() {
+  local manifest="$1" setting="$2"
+  awk -v setting="$setting" '
+    /^[[:space:]]*\[/ {
+      section = $0
+      sub(/[[:space:]]*#.*/, "", section)
+      gsub(/[[:space:]\[\]]/, "", section)
+      next
+    }
+    {
+      line = $0
+      equals = index(line, "=")
+      if (!equals) next
+      key = substr(line, 1, equals - 1)
+      gsub(/[[:space:]]/, "", key)
+      full = section == "" ? key : section "." key
+      value = substr(line, equals + 1)
+      sub(/^[[:space:]]*/, "", value)
+      if (full == setting ".workspace" && value ~ /^true([[:space:]#]|$)/) {
+        print "workspace"
+        exit
+      }
+      if (full != setting) next
+      compact = value
+      gsub(/[[:space:]]/, "", compact)
+      if (compact ~ /^\{workspace=true\}/) {
+        print "workspace"
+        exit
+      }
+      quote = substr(value, 1, 1)
+      if (quote == "\"" || quote == "\047") {
+        value = substr(value, 2)
+        end = index(value, quote)
+        if (end) print substr(value, 1, end - 1)
+      }
+      exit
+    }
+  ' "$manifest"
+}
+
+rust_edition_for_file() {
+  local dir root manifest edition workspace
+  dir="$(cd "$(dirname "$1")" && pwd)"
+  root="$(pragma_project_root)"
+  while [[ ! -f "$dir/Cargo.toml" ]]; do
+    if [[ "$dir" == "$root" || "$dir" == / ]]; then
+      # Preserve the existing choice for files outside a Cargo package.
+      printf '2021\n'
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  manifest="$dir/Cargo.toml"
+  if [[ -z "$(rust_manifest_setting "$manifest" package.name)" ]]; then
+    printf '2021\n'
+    return 0
+  fi
+  edition="$(rust_manifest_setting "$manifest" package.edition)"
+  if [[ "$edition" != workspace ]]; then
+    # Cargo packages without an explicit edition use Rust 2015.
+    printf '%s\n' "${edition:-2015}"
+    return 0
+  fi
+  workspace="$(rust_manifest_setting "$manifest" package.workspace)"
+  if [[ -n "$workspace" ]]; then
+    [[ "$workspace" == /* ]] || workspace="$dir/$workspace"
+    dir="$(cd "$workspace" && pwd)" || return 1
+  fi
+  while :; do
+    if [[ -f "$dir/Cargo.toml" ]]; then
+      edition="$(rust_manifest_setting "$dir/Cargo.toml" workspace.package.edition)"
+      if [[ -n "$edition" ]]; then
+        printf '%s\n' "$edition"
+        return 0
+      fi
+    fi
+    [[ "$dir" != / ]] || return 1
+    dir="$(dirname "$dir")"
+  done
+}
+
 format_rust() {
   local -a files=("$@")
   local -a rs_files=()
@@ -135,15 +217,40 @@ format_rust() {
   local file_hash
   local rustfmt_output=""
   local rustfmt_status=0
+  local file edition output status
+  local -a editions=()
+  local -a edition_files=()
   filter_by_ext rs_files rs -- "${files[@]}"
   [[ ${#rs_files[@]} -eq 0 ]] && return 0
 
   if has_tool rustfmt; then
     log_info "Formatting Rust files..."
-    set +e
-    rustfmt_output="$(rustfmt --edition 2021 "${rs_files[@]}" 2>&1)"
-    rustfmt_status=$?
-    set -e
+    # Resolve every file before formatting, then keep different package editions
+    # in separate invocations so workspace and nested crates use their own syntax.
+    for file in "${rs_files[@]}"; do
+      if ! edition="$(rust_edition_for_file "$file")" ||
+        [[ ! "$edition" =~ ^(2015|2018|2021|2024)$ ]]; then
+        pragma_add_failure "rustfmt" "config" 0 "" "$FORMAT_RERUN" "cannot resolve Rust edition" "$file" 1
+        return 1
+      fi
+      editions+=("$edition")
+    done
+    for edition in 2015 2018 2021 2024; do
+      edition_files=()
+      for ((status = 0; status < ${#rs_files[@]}; status++)); do
+        [[ "${editions[status]}" != "$edition" ]] || edition_files+=("${rs_files[status]}")
+      done
+      [[ ${#edition_files[@]} -gt 0 ]] || continue
+      set +e
+      output="$(rustfmt --edition "$edition" "${edition_files[@]}" 2>&1)"
+      status=$?
+      set -e
+      if [[ $status -ne 0 ]]; then
+        rustfmt_output="$output"
+        rustfmt_status=$status
+        break
+      fi
+    done
 
     if [[ $rustfmt_status -ne 0 ]]; then
       if has_tool cargo; then
