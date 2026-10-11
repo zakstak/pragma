@@ -162,13 +162,13 @@ cat >"$bin_dir/golangci-lint" <<'EOF'
 printf '%s\n' "${TEST_GOLANGCI_VERSION:-2.14.0}"
 EOF
 chmod +x "$bin_dir/golangci-lint"
-capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=golangci-lint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
+capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=golangci-lint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$runtime_path" /bin/bash "$node_repo/tools/install-tools.sh" --agent
 assert_contains "Current golangci-lint satisfies installer requirement" "golangci-lint is available" "$CAPTURED_OUTPUT"
 cat >"$bin_dir/curl" <<'EOF'
 #!/bin/sh
 exit 1
 EOF
-capture_command_result env TEST_GOLANGCI_VERSION=1.64.8 PRAGMA_INSTALL_ONLY_TOOLS=golangci-lint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
+capture_command_result env TEST_GOLANGCI_VERSION=1.64.8 PRAGMA_INSTALL_ONLY_TOOLS=golangci-lint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 PATH="$bin_dir:$runtime_path" /bin/bash "$node_repo/tools/install-tools.sh" --agent
 assert_contains "Old golangci-lint triggers installation" "golangci-lint is missing" "$CAPTURED_OUTPUT"
 assert_not_contains "Old golangci-lint does not satisfy requirement" "golangci-lint is available" "$CAPTURED_OUTPUT"
 
