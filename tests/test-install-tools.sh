@@ -61,6 +61,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 repo_dir="$tmp_dir/repo"
 bin_dir="$tmp_dir/bin"
+export PRAGMA_GLOBAL_BIN_DIR="$bin_dir"
 runtime_path="$tmp_dir/runtime-path"
 mkdir -p "$repo_dir" "$bin_dir" "$runtime_path"
 
@@ -169,7 +170,7 @@ assert_not_contains "Old golangci-lint does not satisfy requirement" "golangci-l
 checksum_repo="$tmp_dir/pragma-checksum"
 mkdir -p "$checksum_repo/tools" "$checksum_repo/lib" "$checksum_repo/bin"
 cp "$PRAGMA_DIR/tools/install-tools.sh" "$PRAGMA_DIR/tools/versions.sh" "$checksum_repo/tools/"
-cp "$PRAGMA_DIR/lib/common.sh" "$PRAGMA_DIR/lib/detect.sh" "$checksum_repo/lib/"
+cp "$PRAGMA_DIR/lib/common.sh" "$PRAGMA_DIR/lib/detect.sh" "$PRAGMA_DIR/lib/tooling.sh" "$checksum_repo/lib/"
 printf '#!/bin/sh\nprintf "existing-scanner\\n"\n' >"$checksum_repo/bin/kingfisher"
 chmod +x "$checksum_repo/bin/kingfisher"
 cat >"$bin_dir/curl" <<'EOF'
@@ -183,7 +184,7 @@ while [ "$#" -gt 0 ]; do
 done
 exit 1
 EOF
-capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=kingfisher PATH="$bin_dir:$PATH" /bin/bash "$checksum_repo/tools/install-tools.sh" --agent --update
+capture_command_result env PRAGMA_GLOBAL_BIN_DIR="$checksum_repo/bin" PRAGMA_INSTALL_ONLY_TOOLS=kingfisher PATH="$bin_dir:$PATH" /bin/bash "$checksum_repo/tools/install-tools.sh" --agent --update
 if [[ $CAPTURED_STATUS -ne 0 && "$("$checksum_repo/bin/kingfisher")" == existing-scanner ]]; then
   printf 'PASS: corrupt Kingfisher downloads preserve the installed binary\n'
   PASS=$((PASS + 1))

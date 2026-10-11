@@ -123,6 +123,11 @@ EOF
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
+export PRAGMA_GLOBAL_BIN_DIR="$tmp_dir/global-bin"
+mkdir -p "$PRAGMA_GLOBAL_BIN_DIR"
+for core_tool in prek kingfisher; do
+  cp "$(command -v "$core_tool")" "$PRAGMA_GLOBAL_BIN_DIR/$core_tool"
+done
 
 repo_copy="$tmp_dir/pragma-self"
 copy_tree "$PRAGMA_DIR" "$repo_copy"
@@ -144,7 +149,7 @@ EOF
 output="$(cd "$tmp_dir" && bash "$repo_copy/install.sh" --agent "$repo_copy" 2>&1)"
 
 assert_contains "Self-install keeps repo-local config" "Self-install detected; keeping repo-local prek.toml" "$output"
-assert_contains "Tool detection uses target repo" "Detected languages: docker json markdown shell toml yaml" "$output"
+assert_contains "Tool detection uses target repo" "Detected languages: json markdown shell toml yaml" "$output"
 assert_not_contains "Caller cwd does not leak into detection" "Detected languages: go" "$output"
 
 if cmp -s "$tmp_dir/original-prek.toml" "$repo_copy/prek.toml"; then
@@ -168,47 +173,6 @@ if hook_output="$(cd "$repo_copy" && PATH="$repo_copy/bin:$PATH" prek run --file
   PASS=$((PASS + 1))
 else
   printf 'FAIL: pre-commit hook failed on pragma or spaced files\n%s\n' "$hook_output"
-  FAIL=$((FAIL + 1))
-fi
-
-stub_docker_bin="$tmp_dir/stub-docker-bin"
-mkdir -p "$stub_docker_bin"
-cat >"$stub_docker_bin/docker" <<'EOF'
-#!/bin/sh
-exit 0
-EOF
-chmod +x "$stub_docker_bin/docker"
-
-docker_self_repo="$tmp_dir/pragma-self-docker"
-copy_tree "$PRAGMA_DIR" "$docker_self_repo"
-rm -rf "${docker_self_repo:?}/bin"
-cp "$docker_self_repo/prek.toml" "$tmp_dir/original-docker-prek.toml"
-cp "$docker_self_repo/prek.toml" "$tmp_dir/tracked-docker-prek.toml"
-
-docker_self_output="$(cd "$tmp_dir" && PATH="$stub_docker_bin:$PATH" PRAGMA_DOCKER_IMAGE="pragma-tools:test" bash "$docker_self_repo/install.sh" --agent --docker-tools "$docker_self_repo" 2>&1)"
-
-assert_contains "Docker self-install updates repo-local config" "Self-install detected; updating repo-local prek.toml for Docker-backed tools" "$docker_self_output"
-assert_file_contains "Docker self-install scopes tooling mode" 'PRAGMA_TOOL_MODE = "docker"' "$docker_self_repo/prek.toml"
-assert_file_contains "Docker self-install keeps relative format path" "entry = \"./lib/format.sh\"" "$docker_self_repo/prek.toml"
-assert_file_not_contains "Docker self-install avoids absolute format path" "$docker_self_repo/lib/format.sh" "$docker_self_repo/prek.toml"
-
-if cmp -s "$tmp_dir/original-docker-prek.toml" "$docker_self_repo/prek.toml"; then
-  printf 'FAIL: Docker self-install should update repo-local prek.toml\n'
-  FAIL=$((FAIL + 1))
-else
-  printf 'PASS: Docker self-install updates repo-local prek.toml\n'
-  PASS=$((PASS + 1))
-fi
-
-docker_revert_output="$(cd "$tmp_dir" && bash "$docker_self_repo/install.sh" --agent "$docker_self_repo" 2>&1)"
-assert_contains "Native self-install restores tracked repo-local config" "Self-install detected; restoring repo-local prek.toml from tracked template" "$docker_revert_output"
-assert_file_not_contains "Native self-install removes docker wrapper prefix" "PRAGMA_TOOL_MODE" "$docker_self_repo/prek.toml"
-
-if cmp -s "$tmp_dir/tracked-docker-prek.toml" "$docker_self_repo/prek.toml"; then
-  printf 'PASS: Native self-install restores tracked repo-local prek.toml\n'
-  PASS=$((PASS + 1))
-else
-  printf 'FAIL: Native self-install did not restore tracked repo-local prek.toml\n'
   FAIL=$((FAIL + 1))
 fi
 

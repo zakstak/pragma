@@ -46,54 +46,18 @@ golangci_default_config_path() {
   return 1
 }
 
-go_module_root_for_file() {
-  local file="$1"
-  local repo_root dir
-
-  repo_root="$(pwd)"
-  dir="$(cd "$(dirname "$file")" && pwd)"
-
-  while [[ "$dir" != "$repo_root" ]] && [[ "$dir" != "/" ]]; do
-    if [[ -f "$dir/go.mod" ]]; then
-      printf '%s\n' "$dir"
-      return 0
-    fi
-
-    dir="$(dirname "$dir")"
-  done
-
-  printf '%s\n' "$repo_root"
-}
-
 run_golangci_lint_in_dir() {
   local dir="$1"
   shift
 
   (
     cd "$dir"
-    golangci-lint "$@"
+    if ! golangci_is_v2; then
+      printf 'golangci-lint v2 is required; install project tools or run tools/install-tools.sh --agent\n' >&2
+      return 1
+    fi
+    pragma_exec golangci-lint "$@"
   )
-}
-
-repo_relative_path_from_dir() {
-  local base_dir="$1"
-  local target_path="$2"
-  local repo_root current_dir prefix
-
-  repo_root="$(pwd)"
-  current_dir="$base_dir"
-  prefix=""
-
-  if [[ "$target_path" == /* ]]; then
-    target_path="${target_path#"$repo_root"/}"
-  fi
-
-  while [[ "$current_dir" != "$repo_root" ]] && [[ "$current_dir" != "/" ]]; do
-    prefix+="../"
-    current_dir="$(dirname "$current_dir")"
-  done
-
-  printf '%s%s\n' "$prefix" "$target_path"
 }
 
 lint_go() {
@@ -120,11 +84,6 @@ lint_go() {
 
   [[ ${#lintable_go_files[@]} -eq 0 ]] && return 0
   go_files=("${lintable_go_files[@]}")
-
-  if ! golangci_is_v2; then
-    pragma_add_failure "golangci-lint" "tool" 0 "" "$LINT_RERUN" "golangci-lint v2 is required; run tools/install-tools.sh --agent" "" 1
-    return 1
-  fi
 
   repo_root="$(pwd)"
 

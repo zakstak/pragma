@@ -5,18 +5,6 @@ set -euo pipefail
 PRAGMA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bootstrap_args=(--agent)
 required_tools=(git prek kingfisher shfmt shellcheck prettier npm node go goimports golangci-lint yamllint)
-case "${1:-}" in
-  "") ;;
-  --docker-tools)
-    bootstrap_args+=(--docker-tools)
-    required_tools=(git prek docker)
-    ;;
-  *)
-    printf 'Usage: %s [--docker-tools]\n' "$0" >&2
-    exit 2
-    ;;
-esac
-
 for tool in "${required_tools[@]}"; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'Missing integration-test dependency: %s\n' "$tool" >&2
@@ -26,10 +14,15 @@ done
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
+export PRAGMA_GLOBAL_BIN_DIR="$tmp_dir/global-bin"
+mkdir -p "$PRAGMA_GLOBAL_BIN_DIR"
+for core_tool in prek kingfisher; do
+  cp "$(command -v "$core_tool")" "$PRAGMA_GLOBAL_BIN_DIR/$core_tool"
+done
 repo_dir="$tmp_dir/target repo"
 remote_dir="$tmp_dir/remote.git"
 log_file="$tmp_dir/hook.log"
-unset PRAGMA_HOME PRAGMA_TOOL_MODE PRAGMA_DOCKER_BIN_DIR PRAGMA_SKIP_TESTS PRAGMA_SKIP_INTERNAL_BIN_PATH PRAGMA_RUNNING_IN_DOCKER
+unset PRAGMA_HOME PRAGMA_SKIP_TESTS PRAGMA_SKIP_INTERNAL_BIN_PATH
 export PRAGMA_OUTPUT_FORMAT=gpt
 
 expect_success() {
