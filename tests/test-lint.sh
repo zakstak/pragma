@@ -38,6 +38,13 @@ assert_not_contains() {
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+# The old-linter case must not select tools installed in the real checkout.
+fixture_dir="$tmp_dir/pragma"
+mkdir -p "$fixture_dir"
+cp -R "$PRAGMA_DIR/lib" "$fixture_dir/"
+cp "$PRAGMA_DIR/.golangci.yml" "$fixture_dir/"
+PRAGMA_DIR="$fixture_dir"
+
 bin_dir="$tmp_dir/bin"
 repo_dir="$tmp_dir/repo"
 mkdir -p "$bin_dir" "$repo_dir/src"
