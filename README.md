@@ -159,7 +159,8 @@ are:
 - Prettier and Oxlint use Pragma's `package-lock.json` through `npm ci`. The
   fallback Oxlint needs Node 20.19+ or 22.12+.
 - Ruff, yamllint, and pytest use hashed requirements in Pragma's `.venv`.
-  Installation needs Python 3.10+ with `venv` support.
+  Installation needs Python 3.10+ with `venv` support. Installing any Python
+  fallback exposes all three pinned tools in `<pragma>/bin`.
 - Rust components use your installed rustup toolchain.
 
 Downloads require `curl` and a SHA-256 checksum utility. Archive extraction also
