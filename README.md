@@ -101,6 +101,10 @@ manifests.
 
 Golangci-lint v2 is required. Go templ files (`.templ`) are ignored.
 
+Rust formatting uses each package's Cargo edition, including workspace
+inheritance. Packages without an edition use Rust 2015; standalone files use
+Rust 2021.
+
 Oxlint checks JavaScript and TypeScript files with `--deny-warnings`. It uses
 your project's Oxlint configuration and does not apply fixes. Existing ESLint
 configurations need
@@ -378,8 +382,8 @@ Core tools and Pragma's checkout remain available for other repositories.
 
 ## Run the checks
 
-Checks need Git, Go 1.26+, and npm with a Node version supported by the fallback
-Oxlint. From the Pragma checkout:
+Checks need Git, Go 1.26+, rustfmt with Rust 2024 support, and npm with a Node
+version supported by the fallback Oxlint. From the Pragma checkout:
 
 ```bash
 PRAGMA_INSTALL_ONLY_TOOLS="prek kingfisher goimports golangci-lint prettier oxlint shfmt shellcheck yamllint" \
