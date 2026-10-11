@@ -53,6 +53,18 @@ log_skip() {
 
 # ─── Tool checks ─────────────────────────────────────────────────────────────
 
+# Only explicitly assigned worktrees require thread ownership enforcement.
+pragma_enforce_thread_owner() {
+  local owner
+  owner="$(git rev-parse --path-format=absolute --git-path pragma/thread.json 2>/dev/null)" || return 0
+  [[ -e "$owner" ]] || return 0
+  if ! command -v node >/dev/null 2>&1; then
+    printf 'Pragma thread guard requires Node.js for this assigned worktree.\n' >&2
+    return 1
+  fi
+  node "$(pragma_dir)/lib/thread-context.js" check .
+}
+
 # Check if a tool is available. Returns 0 if found, 1 if not.
 has_tool() {
   if pragma_go_tool_package "$1" >/dev/null 2>&1; then

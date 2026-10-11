@@ -275,6 +275,9 @@ Each receipt contains:
   sources are excluded. `inputs/` retains copies of configs and lockfiles.
 - `findings.json`, with normalized TypeScript diagnostic differences, outcome
   differences, crashes, timeouts, and changes to the repository during the run.
+- `summary.json`, with `schema: "pragma.shadow-summary"` and
+  `schema_version: 1`. It records the repository, worktree, thread, compiler
+  outcomes, findings, Pragma source hashes, and relative paths to the full logs.
 - `report.md` and `notes.md`, for reviewing and recording local observations.
 
 Direct shadow runs print the receipt path. Prek can hide output from passing
@@ -291,6 +294,73 @@ block a passing normal check. Cache setup errors are reported, and the normal
 typecheck still runs. An interrupted capture can leave a receipt with
 `state: "running"` and incomplete results. Cancelling with SIGINT or SIGTERM
 stops the active compiler process group.
+
+### Collect versioned summaries
+
+To collect receipts from several repositories, run:
+
+```bash
+node ~/.pragma/tools/collect-shadow.js \
+  --repo /path/to/first-repo --repo /path/to/second-repo > shadow-collection.json
+```
+
+For a shared cache, use `--cache /path/to/cache`. You can repeat both options.
+Without options, the collector uses `PRAGMA_SHADOW_CACHE_DIR` or the current
+worktree's Git cache. Add `--latest` to retain the latest completed run for each
+repository, worktree, and thread combination. Separate threads retain separate
+results, even when they share a repository. Legacy receipts without identities
+form separate groups from identified runs; the collector does not infer a thread
+or repository identity for old captures.
+
+The output has `schema: "pragma.shadow-collection"` and `schema_version: 1`. Its
+`runs` array pairs each absolute receipt path with its versioned summary. Each
+summary's `baseline` and `shadow` fields retain the root project checks, or are
+null when those checks did not run. Read `baseline_policy` to distinguish a
+blocking project check from an advisory capture. The `comparisons` array records
+individual compiler comparisons, which can have narrower coverage. The `skipped`
+array records incomplete, invalid, or unsupported receipts with a reason.
+Existing completed metadata version 2 receipts are adapted in memory; the
+collector never changes their files. Collectors must check the schema name and
+version before reading fields. Additional fields can be added within a version;
+incompatible changes require a new version.
+
+Pragma writes the run summary before publishing `metadata.json` with
+`state: "complete"`. The collector excludes a capture until that marker exists.
+Logs and receipts remain local and can contain source code or compiler output.
+
+### Isolate concurrent agent threads
+
+Use one worktree per agent thread before starting edits. With Node installed,
+create or reuse the worktree for your current Codex thread:
+
+```bash
+node ~/.pragma/tools/thread-worktree.js "$CODEX_THREAD_ID" /path/to/repo
+```
+
+Change into the `worktree` path in the JSON output. For another agent runtime,
+set `PRAGMA_THREAD_ID` to its stable thread ID and pass that value instead.
+Without arguments, the helper uses `PRAGMA_THREAD_ID`, then `CODEX_THREAD_ID`,
+and the current repository. IDs contain 1–128 printable characters without
+surrounding whitespace.
+
+The helper creates a separate branch and worktree under
+`~/.cache/pragma/worktrees/`. Set `PRAGMA_WORKTREE_DIR` to change that base
+directory. Reusing a thread preserves its dirty files and commits. Concurrent
+creation for the same thread is serialized. Conflicting ownership, an occupied
+branch, or an unowned destination causes an error that preserves existing work.
+
+Ownership is stored in that worktree's Git metadata at `pragma/thread.json`.
+Pragma's format, lint, secrets, and normal test hooks reject a different thread
+ID before running checks. `PRAGMA_THREAD_ID` takes precedence over
+`CODEX_THREAD_ID`; manual runs without either inherit the worktree owner.
+Unclaimed checkouts remain usable, so run the helper for each concurrent thread.
+These guards apply to Pragma hooks and helpers; they do not prevent a chat from
+opening or intercept arbitrary file edits.
+
+Shadow receipts record repository, worktree, and thread identities. Receipt
+directories are unique even when several threads use the same shadow cache. The
+versioned collector keeps their results separate without a shared summary file
+that concurrent runs could overwrite.
 
 ## Update an existing install
 

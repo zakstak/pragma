@@ -87,14 +87,66 @@ printf 'PASS: disabled shadow creates no cache or extra compiler run\n'
 run_checks
 receipt="$(receipt_path)"
 [[ "$(cat "$TEST_COMMANDS")" == $'run typecheck\nrun typecheck:shadow\ntest' ]]
-node - "$receipt" "$head" <<'JS'
+node - "$receipt" "$head" "$PRAGMA_DIR/lib/shadow-summary.js" <<'JS'
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const [directory, head] = process.argv.slice(2);
+const [directory, head, summaryHelper] = process.argv.slice(2);
 const meta = JSON.parse(fs.readFileSync(path.join(directory, 'metadata.json')));
 const findings = JSON.parse(fs.readFileSync(path.join(directory, 'findings.json')));
+const summary = JSON.parse(fs.readFileSync(path.join(directory, 'summary.json')));
 assert.equal(meta.state, 'complete');
+assert.equal(meta.schema_version, 2);
+assert.equal(findings.schema, 'pragma.shadow-findings');
+assert.equal(findings.schema_version, 1);
+assert.equal(summary.schema, 'pragma.shadow-summary');
+assert.equal(summary.schema_version, 1);
+assert.equal(summary.run_id, meta.id);
+assert.equal(summary.state, 'complete');
+assert.equal(summary.started_at, meta.started_at);
+assert.equal(summary.finished_at, meta.finished_at);
+assert.deepEqual(summary.repository, { id: meta.context?.repository_id ?? null, root: meta.repository.root, git_dir: meta.repository.git_dir, head });
+assert.equal(summary.worktree_id, meta.context?.worktree_id ?? null);
+assert.deepEqual(summary.context, meta.context ?? { thread_id: null, thread_source: null });
+const { buildSummary } = require(summaryHelper);
+const legacyMeta = { ...meta };
+delete legacyMeta.context;
+const legacySummary = buildSummary(legacyMeta, findings, summary.artifacts);
+assert.deepEqual(legacySummary.context, { thread_id: null, thread_source: null });
+assert.equal(legacySummary.repository.id, null);
+assert.equal(legacySummary.worktree_id, null);
+const contextualMeta = { ...meta, context: { thread_id: 'thread-fixture', thread_source: 'PRAGMA_THREAD_ID', repository_id: 'repository-fixture', worktree_id: 'worktree-fixture' } };
+const contextualSummary = buildSummary(contextualMeta, findings, summary.artifacts);
+assert.deepEqual(contextualSummary.context, contextualMeta.context);
+assert.equal(contextualSummary.repository.id, 'repository-fixture');
+assert.equal(contextualSummary.worktree_id, 'worktree-fixture');
+assert.equal(summary.producer.name, 'pragma');
+assert.equal(summary.producer.version, meta.pragma.version);
+assert.deepEqual(summary.producer.git, meta.pragma.git);
+assert.deepEqual(summary.producer.source_hashes, meta.pragma.source_hashes);
+assert.match(summary.producer.source_hashes['lib/shadow-summary.js'], /^[a-f0-9]{64}$/);
+assert.deepEqual(summary.compilers, meta.compilers);
+assert.equal(summary.baseline_policy, 'project-script-blocking');
+assert.equal(summary.baseline.exit_code, meta.baseline.exit_code);
+assert.equal(summary.shadow.exit_code, meta.shadow.exit_code);
+assert.deepEqual(summary.baseline.artifacts, { stdout: meta.baseline.stdout.file, stderr: meta.baseline.stderr.file });
+assert.deepEqual(summary.shadow.artifacts, { stdout: meta.shadow.stdout.file, stderr: meta.shadow.stderr.file });
+assert.equal(summary.comparisons.length, 1);
+assert.equal(summary.comparisons[0].project, '.');
+assert.equal(summary.comparisons[0].scope, 'project-owned-script');
+assert.equal(summary.comparisons[0].baseline.exit_code, 0);
+assert.equal(summary.comparisons[0].shadow.exit_code, 0);
+assert.deepEqual(summary.comparisons[0].findings, []);
+assert.deepEqual(summary.skipped, []);
+assert.deepEqual(summary.capture_errors, []);
+for (const file of [...Object.values(summary.artifacts), ...Object.values(summary.comparisons[0].artifacts), ...Object.values(summary.baseline.artifacts), ...Object.values(summary.shadow.artifacts)]) {
+  assert.equal(path.isAbsolute(file), false);
+  assert.ok(!file.split(path.sep).includes('..'));
+  assert.ok(fs.existsSync(path.join(directory, file)), file);
+}
+assert.equal(fs.statSync(path.join(directory, 'summary.json')).mode & 0o777, 0o600);
+assert.equal(Object.hasOwn(summary.comparisons[0].baseline, 'stdout'), false);
+assert.equal(Object.hasOwn(summary.comparisons[0].shadow, 'stdout'), false);
 assert.equal(meta.git_before.head, head);
 assert.equal(meta.git_after.head, head);
 assert.equal(meta.git_before.branch, 'main');
@@ -116,7 +168,7 @@ assert.equal(fs.statSync(directory).mode & 0o777, 0o700);
 assert.equal(fs.statSync(path.join(directory, 'metadata.json')).mode & 0o777, 0o600);
 JS
 first_receipt="$receipt"
-printf 'PASS: default shadow caches both full outputs and Git/tool/input metadata privately\n'
+printf 'PASS: default shadow caches outputs and publishes a private versioned collector summary with provenance\n'
 PRAGMA_SHADOW=1 TEST_SHADOW_FAIL=1 run_checks
 receipt="$(receipt_path)"
 [[ "$receipt" != "$first_receipt" && -f "$first_receipt/metadata.json" ]]
@@ -138,8 +190,11 @@ const path = require('node:path');
 const directory = process.argv[2];
 const metadata = JSON.parse(fs.readFileSync(path.join(directory, 'metadata.json')));
 const findings = JSON.parse(fs.readFileSync(path.join(directory, 'findings.json')));
+const summary = JSON.parse(fs.readFileSync(path.join(directory, 'summary.json')));
 assert.equal(metadata.baseline.exit_code, 2);
 assert.equal(metadata.shadow.exit_code, 3);
+assert.equal(summary.baseline.exit_code, 2);
+assert.equal(summary.shadow.exit_code, 3);
 assert.deepEqual(findings.findings, []);
 assert.equal(findings.baseline_diagnostics.length, 1);
 JS
@@ -202,6 +257,7 @@ async function check(label, signal) {
     assert.ok(!ps.stdout.trim() || ps.stdout.trim().startsWith('Z'), `compiler survived: ${ps.stdout}`);
     const directory = fs.readFileSync(receiptFile, 'utf8');
     assert.equal(JSON.parse(fs.readFileSync(`${directory}/metadata.json`)).state, 'running');
+    assert.equal(fs.existsSync(`${directory}/summary.json`), false, 'partial receipt must not advertise a completed summary');
     for (const compiler of ['baseline', 'shadow']) {
       for (const stream of ['stdout', 'stderr']) assert.ok(fs.existsSync(`${directory}/${compiler}.${stream}.log`));
     }

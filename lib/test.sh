@@ -45,6 +45,10 @@ if [[ $# -ne 0 ]]; then
   printf 'Usage: %s [--shadow|--shadow-only]\n' "$0" >&2
   exit 2
 fi
+if ! pragma_enforce_thread_owner; then
+  if $SHADOW_ONLY; then exit 0; fi
+  exit 1
+fi
 
 run_shadow_typecheck() {
   local runner="$1" reader="$2" mode="${3:-required}" receipt_file receipt_dir status output
