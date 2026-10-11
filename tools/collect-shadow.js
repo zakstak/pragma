@@ -2,9 +2,9 @@
 // Read completed receipts without changing caches or creating reporting state.
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawnSync } = require("node:child_process");
 const { isDeepStrictEqual } = require("node:util");
 const { buildSummary, captureSummary } = require("../lib/shadow-summary.js");
+const { resolveCache } = require("../lib/shadow-cache.js");
 
 function object(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -345,16 +345,7 @@ function readReceipt(receipt) {
 }
 
 function repositoryCache(directory) {
-  const result = spawnSync(
-    "git",
-    ["rev-parse", "--git-path", "pragma/shadow"],
-    { cwd: directory, encoding: "utf8" },
-  );
-  requireValue(
-    result.status === 0 && result.stdout.trim(),
-    "cannot resolve repository shadow cache",
-  );
-  return path.resolve(directory, result.stdout.trim());
+  return resolveCache(directory).directory;
 }
 
 function options(argv) {
@@ -372,15 +363,7 @@ function options(argv) {
       inputs.push({ kind: option.slice(2), directory: path.resolve(value) });
     } else throw new Error(`unknown argument: ${option}`);
   }
-  if (!inputs.length)
-    inputs.push(
-      process.env.PRAGMA_SHADOW_CACHE_DIR
-        ? {
-            kind: "cache",
-            directory: path.resolve(process.env.PRAGMA_SHADOW_CACHE_DIR),
-          }
-        : { kind: "repo", directory: process.cwd() },
-    );
+  if (!inputs.length) inputs.push({ kind: "repo", directory: process.cwd() });
   return { inputs, latest };
 }
 

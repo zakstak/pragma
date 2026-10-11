@@ -305,12 +305,15 @@ node ~/.pragma/tools/collect-shadow.js \
 ```
 
 For a shared cache, use `--cache /path/to/cache`. You can repeat both options.
-Without options, the collector uses `PRAGMA_SHADOW_CACHE_DIR` or the current
-worktree's Git cache. Add `--latest` to retain the latest completed run for each
-repository, worktree, and thread combination. Separate threads retain separate
-results, even when they share a repository. Legacy receipts without identities
-form separate groups from identified runs; the collector does not infer a thread
-or repository identity for old captures.
+Without options, the collector uses the current directory's configured cache.
+Capture and collection resolve that cache in this order:
+`PRAGMA_SHADOW_CACHE_DIR`, Git's `pragma.shadowCacheDir`, then the current
+worktree's Git cache. `--repo` uses the same resolution for each repository;
+`--cache` selects a path directly. Add `--latest` to retain the latest completed
+run for each repository, worktree, and thread combination. Separate threads
+retain separate results, even when they share a repository. Legacy receipts
+without identities form separate groups from identified runs; the collector does
+not infer a thread or repository identity for old captures.
 
 The output has `schema: "pragma.shadow-collection"` and `schema_version: 1`. Its
 `runs` array pairs each absolute receipt path with its versioned summary. Each
@@ -327,6 +330,43 @@ incompatible changes require a new version.
 Pragma writes the run summary before publishing `metadata.json` with
 `state: "complete"`. The collector excludes a capture until that marker exists.
 Logs and receipts remain local and can contain source code or compiler output.
+
+### Share receipts across users on one machine
+
+Use a dedicated directory and a Unix group containing the users who produce or
+collect receipts. For example, with an existing `developers` group:
+
+```bash
+sudo install -d -o root -g developers -m 3770 /var/lib/pragma/shadow
+sudo git config --system pragma.shadowCacheDir /var/lib/pragma/shadow
+sudo git config --system pragma.shadowCacheShared true
+```
+
+The machine-wide settings apply to all users and repositories. Existing hooks
+read them at runtime. For settings limited to one user, use
+`git config --global`. Repository settings override machine and user settings.
+The configured directory path must be absolute. `PRAGMA_SHADOW_SHARED=0` or `1`
+overrides shared mode for one invocation.
+
+The shared cache must already exist with mode `3770` and the selected group. Its
+setgid bit gives each new receipt that group. Its sticky bit prevents users from
+deleting another user's receipt, except for the directory owner or root.
+Completed receipts use directories with mode `2750` and files with mode `0640`,
+so group members can collect them while the producer owns their contents. Pragma
+checks membership and permissions before capture and leaves the cache's
+ownership unchanged. The summary records the access mode and group ID.
+
+From any directory, collect the shared receipts with:
+
+```bash
+node ~/.pragma/tools/collect-shadow.js --latest > shadow-collection.json
+```
+
+Users keep their own worktrees and Pragma installations. Existing private
+receipts retain their permissions and locations; collect those with `--cache`
+and their original paths. Sharing applies to new captures. To use a private
+cache for one invocation, set both `PRAGMA_SHADOW_CACHE_DIR` and
+`PRAGMA_SHADOW_SHARED=0`.
 
 ### Isolate concurrent agent threads
 
