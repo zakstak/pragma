@@ -4,7 +4,7 @@ set -euo pipefail
 
 PRAGMA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bootstrap_args=(--agent)
-required_tools=(git prek kingfisher shfmt shellcheck prettier npm node go goimports golangci-lint yamllint)
+required_tools=(git prek kingfisher shfmt shellcheck prettier oxlint npm node go goimports golangci-lint yamllint)
 for tool in "${required_tools[@]}"; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'Missing integration-test dependency: %s\n' "$tool" >&2
@@ -76,6 +76,7 @@ cat >package.json <<'JSON'
   "name": "pragma-hook-fixture",
   "private": true,
   "scripts": {
+    "typecheck": "node -e \"process.exit(require('node:fs').existsSync('.fail-typecheck') ? 1 : 0)\"",
     "test": "node -e \"process.exit(require('node:fs').existsSync('.fail-tests') ? 1 : 0)\""
   }
 }
@@ -108,6 +109,17 @@ func TestAnswer(t *testing.T) {
 }
 GO
 
+cat >hello.ts <<'TS'
+export const answer: number = 42;
+TS
+cat >.oxlintrc.json <<'JSON'
+{
+  "rules": {
+    "no-unused-vars": "warn"
+  }
+}
+JSON
+
 git add .
 expect_rejection 'Formatting changes block the first commit' 'files were modified by this hook' git commit -m fixture
 grep -Fq '  echo "hello"' hello.sh
@@ -117,6 +129,19 @@ grep -Fq 'func Answer() int { return 42 }' answer.go
 printf 'PASS: Go formatting runs through the real hook\n'
 git add .
 expect_success 'Reviewed formatting commits successfully' git commit -m fixture
+
+cat >hello.ts <<'TS'
+const unused: number = 42;
+TS
+cp hello.ts "$tmp_dir/before-lint.ts"
+git add hello.ts
+expect_rejection 'Oxlint warnings block commits' '"tool":"oxlint"' git commit -m 'TypeScript lint rejection'
+cmp hello.ts "$tmp_dir/before-lint.ts"
+printf 'PASS: Oxlint leaves source files unchanged\n'
+printf '{"rules":{"no-unused-vars":"off"}}\n' >.oxlintrc.json
+expect_success 'Oxlint respects project rule configuration' bash .pragma-hooks/lint.sh hello.ts
+git restore --staged --worktree hello.ts
+git restore --worktree .oxlintrc.json
 
 cat >hello.sh <<'SCRIPT'
 #!/usr/bin/env bash
@@ -158,6 +183,11 @@ rm credential.env
 git init -q --bare "$remote_dir"
 git remote add origin "$remote_dir"
 expect_success 'Passing tests allow pushes' git push -u origin main
+printf 'fail fixture typecheck\n' >.fail-typecheck
+expect_success 'Prepare the failing-typecheck push' git commit --allow-empty -m 'typecheck rejection'
+expect_rejection 'Failing typecheck blocks pushes' '"cls":"typecheck"' git push origin main
+rm .fail-typecheck
+expect_success 'Repaired typecheck allows pushes' git push origin main
 printf 'fail fixture tests\n' >.fail-tests
 expect_success 'Prepare the failing-test push' git commit --allow-empty -m 'push rejection'
 expect_rejection 'Failing tests block pushes' '"tool":"npm"' git push origin main

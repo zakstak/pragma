@@ -162,7 +162,7 @@ ensure_npm_tooling_installed() {
   NPM_TOOLING_INSTALLED=true
 }
 
-node_supports_eslint() {
+node_supports_oxlint() {
   has_tool node || return 1
 
   local version major minor patch
@@ -171,8 +171,8 @@ node_supports_eslint() {
   IFS='.' read -r major minor patch <<<"$version"
   [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]] || return 1
 
-  ((major >= 24)) ||
-    ((major == 22 && minor >= 13)) ||
+  ((major > 22)) ||
+    ((major == 22 && minor >= 12)) ||
     ((major == 20 && minor >= 19))
 }
 
@@ -410,19 +410,20 @@ WRAPPER
   fi
 }
 
-install_eslint() {
-  if has_tool npm && node_supports_eslint; then
-    log_info "Installing eslint via npm lockfile..."
+install_oxlint() {
+  if has_tool npm && node_supports_oxlint; then
+    log_info "Installing oxlint via npm lockfile..."
     ensure_npm_tooling_installed || return 1
-    cat >"$BIN_DIR/eslint" <<'WRAPPER'
+    cat >"$BIN_DIR/oxlint" <<'WRAPPER'
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRAGMA_DIR="$(dirname "$SCRIPT_DIR")"
-exec node "$PRAGMA_DIR/.npm-packages/node_modules/.bin/eslint" "$@"
+exec "$PRAGMA_DIR/.npm-packages/node_modules/.bin/oxlint" "$@"
 WRAPPER
-    chmod +x "$BIN_DIR/eslint"
+    chmod +x "$BIN_DIR/oxlint"
+    rm -f "$BIN_DIR/eslint"
   else
-    log_warn "eslint requires npm and Node 20.19+, 22.13+, or 24+ — skipping"
+    log_warn "oxlint requires npm and Node 20.19+ or 22.12+ — skipping"
     return 1
   fi
 }
@@ -609,7 +610,7 @@ tools_for_lang() {
   case "$lang" in
     go) echo "goimports golangci-lint" ;;
     rust) echo "rustfmt clippy" ;;
-    typescript) echo "prettier eslint" ;;
+    typescript) echo "prettier oxlint" ;;
     html) echo "prettier" ;;
     yaml) echo "prettier yamllint" ;;
     docker) echo "hadolint" ;;

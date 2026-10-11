@@ -65,7 +65,7 @@ export PRAGMA_GLOBAL_BIN_DIR="$bin_dir"
 runtime_path="$tmp_dir/runtime-path"
 mkdir -p "$repo_dir" "$bin_dir" "$runtime_path"
 
-for tool in cat chmod dirname find grep mkdir sh sort tr uname; do
+for tool in cat chmod dirname find grep mkdir rm sh sort tr uname; do
   ln -s "$(command -v "$tool")" "$runtime_path/$tool"
 done
 
@@ -137,19 +137,25 @@ printf '%s\n' "${TEST_NODE_VERSION:-v24.0.0}"
 EOF
 chmod +x "$bin_dir/node"
 
-capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=eslint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v20.18.0 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
-assert_contains "unsupported Node version skips eslint install" "eslint requires npm and Node 20.19+, 22.13+, or 24+" "$CAPTURED_OUTPUT"
+# Keep installer fixtures separate from the checkout's real language tools.
+node_repo="$tmp_dir/pragma-node"
+mkdir -p "$node_repo/.npm-packages" "$node_repo/bin"
+printf '#!/bin/sh\nexit 0\n' >"$node_repo/bin/eslint"
+chmod +x "$node_repo/bin/eslint"
+cp -R "$PRAGMA_DIR/lib" "$PRAGMA_DIR/tools" "$node_repo/"
+cp "$PRAGMA_DIR/.npm-packages/package.json" "$PRAGMA_DIR/.npm-packages/package-lock.json" "$node_repo/.npm-packages/"
 
-capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=eslint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v24.0.0 PATH="$bin_dir:$runtime_path" /bin/bash "$PRAGMA_DIR/tools/install-tools.sh" --agent
-if [[ $CAPTURED_STATUS -eq 0 && -x "$PRAGMA_DIR/bin/eslint" ]]; then
-  printf 'PASS: supported Node version installs eslint wrapper\n'
+capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=oxlint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v20.18.0 PATH="$bin_dir:$runtime_path" /bin/bash "$node_repo/tools/install-tools.sh" --agent
+assert_contains "unsupported Node version skips oxlint install" "oxlint requires npm and Node 20.19+ or 22.12+" "$CAPTURED_OUTPUT"
+
+capture_command_result env PRAGMA_INSTALL_ONLY_TOOLS=oxlint PRAGMA_SKIP_INTERNAL_BIN_PATH=1 TEST_NODE_VERSION=v22.12.0 PATH="$bin_dir:$runtime_path" /bin/bash "$node_repo/tools/install-tools.sh" --agent
+if [[ $CAPTURED_STATUS -eq 0 && -x "$node_repo/bin/oxlint" && ! -e "$node_repo/bin/eslint" ]]; then
+  printf 'PASS: supported Node version replaces old fallback with oxlint\n'
   PASS=$((PASS + 1))
 else
-  printf 'FAIL: supported Node version installs eslint wrapper\n'
+  printf 'FAIL: supported Node version replaces old fallback with oxlint\n'
   FAIL=$((FAIL + 1))
 fi
-rm -f "$PRAGMA_DIR/bin/eslint"
-
 cat >"$bin_dir/golangci-lint" <<'EOF'
 #!/bin/sh
 [ "$1" = version ] && [ "$2" = --short ] || exit 2

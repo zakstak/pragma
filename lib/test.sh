@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test.sh — Run test suites for all detected languages in the repo
+# test.sh — Run project typechecks and test suites before a push
 # Used by pre-push hook (operates on full repo, not staged files)
 set -euo pipefail
 
@@ -10,6 +10,72 @@ source "$SCRIPT_DIR/detect.sh"
 PRAGMA_OUTPUT_FORMAT="${PRAGMA_OUTPUT_FORMAT:-gpt}"
 TEST_RERUN="./lib/test.sh"
 TEST_SKIP_CMD="PRAGMA_SKIP_TESTS=1 git push"
+
+# Shadow capture is opt-in for this invocation or the local repository.
+SHADOW_ENABLED="${PRAGMA_SHADOW:-$(git config --bool --get pragma.shadow 2>/dev/null || echo false)}"
+case "$SHADOW_ENABLED" in
+  1 | true) SHADOW_ENABLED=true ;;
+  0 | false) SHADOW_ENABLED=false ;;
+  *)
+    printf 'PRAGMA_SHADOW must be 0, 1, false, or true.\n' >&2
+    exit 2
+    ;;
+esac
+if [[ ${1:-} == --shadow ]]; then
+  SHADOW_ENABLED=true
+  shift
+fi
+if [[ $# -ne 0 ]]; then
+  printf 'Usage: %s [--shadow]\n' "$0" >&2
+  exit 2
+fi
+
+run_shadow_typecheck() {
+  local runner="$1" reader="$2" receipt_file receipt_dir status output
+  if ! receipt_file="$(mktemp)"; then
+    printf 'Shadow capture unavailable; running the normal typecheck.\n' >&2
+    pragma_run "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$runner" run typecheck
+    return $?
+  fi
+  if pragma_exec "$reader" "$SCRIPT_DIR/shadow.js" "$runner" "$receipt_file"; then
+    status=0
+  else
+    status=$?
+  fi
+  receipt_dir="$(cat "$receipt_file")"
+  rm -f "$receipt_file"
+  # A capture setup error must not replace the normal compiler gate.
+  if [[ ! -f "$receipt_dir/metadata.json" ]]; then
+    printf 'Shadow capture unavailable; running the normal typecheck.\n' >&2
+    pragma_run "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$runner" run typecheck
+    return $?
+  fi
+  # Recover the baseline result if an artifact error interrupted finalization.
+  if [[ $status == 125 ]]; then
+    status="$(pragma_exec "$reader" -e '
+      const fs = require("node:fs");
+      const metadata = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const baseline = metadata.baseline;
+      const signals = require("node:os").constants.signals;
+      console.log(!baseline ? "not-run" : baseline.exit_code ?? (128 + (signals[baseline.signal] || 0)));
+    ' "$receipt_dir/metadata.json")" || status=125
+    if [[ "$status" == not-run ]]; then
+      pragma_run "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$runner" run typecheck
+      return $?
+    fi
+  fi
+  if [[ $status -ne 0 ]]; then
+    output="$(
+      tail -n 5 "$receipt_dir/baseline.stdout.log"
+      tail -n 5 "$receipt_dir/baseline.stderr.log"
+    )"
+    if pragma_human_output_enabled && [[ -n "$output" ]]; then
+      printf '%s\n' "$output" >&2
+    fi
+    pragma_add_failure "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$output" "$status"
+    return "$status"
+  fi
+}
 
 # ─── Per-language test runners ────────────────────────────────────────────────
 
@@ -36,37 +102,77 @@ test_rust() {
 }
 
 test_typescript() {
-  log_info "Running TypeScript/JS tests..."
+  local runner=npm reader=node scripts='' status
+  local run_typecheck=false run_tests=false
 
-  # Prefer bun, then npm
-  if [[ -f "bun.lock" ]] || [[ -f "bun.lockb" ]]; then
-    if has_tool bun; then
-      pragma_run "bun" "test" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "bun tests failed" bun test || return 1
-      log_success "TypeScript tests passed (bun)"
-      return 0
-    fi
+  # Keep Bun's native test discovery for Bun projects.
+  if [[ -f "bun.lock" || -f "bun.lockb" ]] && has_tool bun; then
+    runner=bun
+    run_tests=true
   fi
 
   if [[ -f "package.json" ]]; then
-    # Check if a test script exists
-    if grep -q '"test"' package.json 2>/dev/null; then
-      if has_tool npm; then
-        pragma_run "npm" "test" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "npm tests failed" npm test || return 1
-        log_success "TypeScript tests passed (npm)"
-        return 0
+    if ! has_tool node; then
+      if has_tool bun; then
+        reader=bun
       else
-        log_warn "npm not found, cannot run TypeScript tests"
-        pragma_add_failure "npm" "tool" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "missing tool: npm" "" 1
+        pragma_add_failure "node" "tool" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "node or bun is required to read package.json" "" 1
         return 1
       fi
+    fi
+    # shellcheck disable=SC2016 # The template literal belongs to JavaScript.
+    if scripts="$(pragma_exec "$reader" -e '
+      const fs = require("node:fs");
+      try {
+        const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+        const scripts = pkg.scripts ?? {};
+        for (const name of ["typecheck", "test"]) {
+          if (!Object.hasOwn(scripts, name)) continue;
+          if (typeof scripts[name] !== "string" || !scripts[name].trim()) {
+            throw new Error(`scripts.${name} must be a nonempty string`);
+          }
+          console.log(name);
+        }
+      } catch (error) {
+        console.error(error.message);
+        process.exit(1);
+      }
+    ' 2>&1)"; then
+      [[ "$scripts" != *typecheck* ]] || run_typecheck=true
+      [[ "$scripts" != *test* ]] || run_tests=true
     else
-      log_skip "No test script in package.json"
-      return 0
+      status=$?
+      pragma_add_failure "package.json" "config" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "cannot read project check scripts" "$scripts" "$status"
+      return 1
     fi
   fi
 
-  log_skip "No test runner found for TypeScript"
-  return 0
+  if $SHADOW_ENABLED && ! $run_typecheck; then
+    printf 'Shadow capture skipped: no project typecheck script is declared.\n' >&2
+  fi
+  if ! $run_typecheck && ! $run_tests; then
+    log_skip "No typecheck or test script in package.json"
+    return 0
+  fi
+  if ! has_tool "$runner"; then
+    pragma_add_failure "$runner" "tool" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "missing tool: $runner" "" 1
+    return 1
+  fi
+
+  if $run_typecheck; then
+    log_info "Running project typecheck ($runner)..."
+    if $SHADOW_ENABLED; then
+      run_shadow_typecheck "$runner" "$reader" || return 1
+    else
+      pragma_run "$runner" "typecheck" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "typescript typecheck failed" "$runner" run typecheck || return 1
+    fi
+    log_success "TypeScript typecheck passed ($runner)"
+  fi
+  if $run_tests; then
+    log_info "Running TypeScript/JS tests ($runner)..."
+    pragma_run "$runner" "test" 1 "$TEST_SKIP_CMD" "$TEST_RERUN" "$runner tests failed" "$runner" test || return 1
+    log_success "TypeScript tests passed ($runner)"
+  fi
 }
 
 test_python() {
@@ -104,7 +210,7 @@ main() {
     exit 0
   fi
 
-  log_header "Running Tests"
+  log_header "Running Pre-push Checks"
 
   local langs
   langs=$(detect_from_repo)

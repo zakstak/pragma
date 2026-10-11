@@ -148,12 +148,12 @@ lint_typescript() {
   filter_by_ext ts_files ts tsx js jsx -- "${files[@]}"
   [[ ${#ts_files[@]} -eq 0 ]] && return 0
 
-  if has_tool eslint; then
+  if has_tool oxlint; then
     log_info "Linting TypeScript/JS files..."
-    pragma_run "eslint" "lint" 0 "" "$LINT_RERUN" "typescript lint failed" eslint "${ts_files[@]}" || return 1
+    pragma_run "oxlint" "lint" 0 "" "$LINT_RERUN" "typescript lint failed" oxlint --deny-warnings -- "${ts_files[@]}" || return 1
   else
-    log_warn "Missing tool: ${BOLD}eslint${RESET} (typescript linter)"
-    pragma_add_failure "eslint" "tool" 0 "" "$LINT_RERUN" "missing tool: eslint" "" 1
+    log_warn "Missing tool: ${BOLD}oxlint${RESET} (typescript linter)"
+    pragma_add_failure "oxlint" "tool" 0 "" "$LINT_RERUN" "missing tool: oxlint" "" 1
     return 1
   fi
 }
