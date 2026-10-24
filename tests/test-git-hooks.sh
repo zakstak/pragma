@@ -130,6 +130,26 @@ printf 'PASS: Go formatting runs through the real hook\n'
 git add .
 expect_success 'Reviewed formatting commits successfully' git commit -m fixture
 
+mkdir -p output
+printf 'generated image fixture\n' >output/generated.png
+git add output/generated.png
+expect_rejection 'Generated image outputs block real commits' 'generated-artifacts' git commit -m 'generated output rejection'
+git -c core.hooksPath=/dev/null commit -qm 'previously tracked artifact fixture'
+expect_rejection 'Artifact check always runs on an empty commit' 'generated-artifacts' git commit --allow-empty -m 'existing artifact rejection'
+git rm -q output/generated.png
+expect_success 'Deleting an existing artifact permits a real commit' git commit -m 'remove generated output'
+
+printf 'not staged\n' >intent.gguf
+git add -N intent.gguf
+printf 'authored change\n' >authored.txt
+git add authored.txt
+expect_success 'Intent-to-add artifacts do not block unrelated commits' git commit -m 'authored change'
+if git cat-file -e HEAD:intent.gguf 2>/dev/null; then
+  printf 'FAIL: intent-to-add artifact entered the commit\n'
+  exit 1
+fi
+git reset -q -- intent.gguf
+
 cat >hello.ts <<'TS'
 const unused: number = 42;
 TS
