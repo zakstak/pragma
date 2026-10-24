@@ -123,20 +123,9 @@ generate_target_wrappers() {
   write_hook_wrapper format.sh
   write_hook_wrapper lint.sh
   write_hook_wrapper secrets.sh
+  write_hook_wrapper generated-artifacts.sh
   write_hook_wrapper test.sh
   write_hook_wrapper shadow.sh
-}
-
-remove_stale_lefthook_shim() {
-  local hook_name="$1"
-  local hook_path
-
-  hook_path="$(git -C "$TARGET_REPO" rev-parse --git-path "hooks/$hook_name")"
-
-  if [[ -f "$hook_path" ]] && grep -Fq 'lefthook' "$hook_path"; then
-    rm -f "$hook_path"
-    log_info "Removed stale lefthook shim for $hook_name"
-  fi
 }
 
 # ─── Step 1: Ensure the shared per-user core ──────────────────────────────────
@@ -178,6 +167,15 @@ generate_config() {
     printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path lint.sh)")"
     printf 'language = "script"\n'
     printf "files = '(\\\\.(go|rs|ts|tsx|js|jsx|yml|yaml|sh|toml|py)$)|((^|/)([Dd]ockerfile(\\\\.[^/]+)?|[^/]+\\\\.[Dd]ockerfile)$)'\n"
+    printf 'stages = ["pre-commit"]\n\n'
+
+    printf '[[repos.hooks]]\n'
+    printf 'id = "generated-artifacts"\n'
+    printf 'name = "generated artifacts"\n'
+    printf 'entry = "%s"\n' "$(toml_escape_string "$(render_entry_path generated-artifacts.sh)")"
+    printf 'language = "script"\n'
+    printf 'pass_filenames = false\n'
+    printf 'always_run = true\n'
     printf 'stages = ["pre-commit"]\n\n'
 
     printf '[[repos.hooks]]\n'
@@ -255,10 +253,6 @@ fi
 
 # ─── Step 4: Run prek install ─────────────────────────────────────────────────
 
-remove_stale_lefthook_shim pre-commit
-remove_stale_lefthook_shim pre-push
-remove_stale_lefthook_shim prepare-commit-msg
-
 log_info "Installing git hooks via prek..."
 (cd "$TARGET_REPO" && pragma_exec prek install --overwrite --hook-type pre-commit --hook-type pre-push) || {
   log_error "prek install failed"
@@ -282,7 +276,7 @@ log_header "Setup Complete"
 log_success "Pragma is configured for ${BOLD}$TARGET_REPO${RESET}"
 echo ""
 log_info "Hooks installed:"
-echo "  ${GREEN}pre-commit${RESET} → format + lint + kingfisher"
+echo "  ${GREEN}pre-commit${RESET} → format + lint + generated artifacts + kingfisher"
 echo "  ${GREEN}pre-push${RESET}   → project typecheck + tests + ts-rust shadow receipts"
 echo ""
 log_info "To skip hooks temporarily:"
