@@ -4,6 +4,9 @@ Pragma owns shared Git hooks, tool selection, pinned tool installation, and
 compiler comparison helpers for Linux and macOS. Target repositories own their
 application code, dependencies, and project-specific hook policy.
 
+These instructions guide development agents only. Do not inject this file or
+other repository instructions into an application's runtime chat prompts.
+
 ## Scope and implementation
 
 - Read the relevant hook, installer path, and fixture tests before editing. Keep
