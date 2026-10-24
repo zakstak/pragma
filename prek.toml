@@ -18,6 +18,15 @@ files = '(\.(go|rs|ts|tsx|js|jsx|yml|yaml|sh|toml|py)$)|((^|/)([Dd]ockerfile(\.[
 stages = ["pre-commit"]
 
 [[repos.hooks]]
+id = "generated-artifacts"
+name = "generated artifacts"
+entry = "./lib/generated-artifacts.sh"
+language = "script"
+pass_filenames = false
+always_run = true
+stages = ["pre-commit"]
+
+[[repos.hooks]]
 id = "kingfisher"
 name = "kingfisher"
 entry = "./lib/secrets.sh"

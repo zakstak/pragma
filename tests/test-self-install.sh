@@ -16,6 +16,12 @@ copy_tree() {
 
   mkdir -p "$target_dir"
   cp -R "$source_dir/." "$target_dir"
+  # A linked checkout has a .git file pointing at the source index.
+  rm -rf -- "${target_dir:?}/.git"
+  git -C "$target_dir" init -q
+  git -C "$source_dir" ls-files -z | git -C "$target_dir" --literal-pathspecs add --pathspec-from-file=- --pathspec-file-nul
+  git -C "$target_dir" -c user.name='Pragma fixture' -c user.email=pragma-fixture@example.invalid \
+    -c core.hooksPath=/dev/null -c commit.gpgsign=false commit -qm 'fixture source'
 }
 
 assert_contains() {
@@ -131,6 +137,7 @@ for core_tool in prek kingfisher; do
   cp "$(command -v "$core_tool")" "$PRAGMA_GLOBAL_BIN_DIR/$core_tool"
 done
 
+git -C "$PRAGMA_DIR" ls-files --stage -z >"$tmp_dir/source-index"
 repo_copy="$tmp_dir/pragma-self"
 copy_tree "$PRAGMA_DIR" "$repo_copy"
 rm -rf "${repo_copy:?}/bin"
@@ -188,6 +195,9 @@ assert_contains "Generated install completes" "Pragma is configured for $target_
 assert_file_contains "Generated config points format hook at repo-local wrapper" "entry = \".pragma-hooks/format.sh\"" "$target_repo/prek.toml"
 assert_file_contains "Generated config points lint hook at repo-local wrapper" "entry = \".pragma-hooks/lint.sh\"" "$target_repo/prek.toml"
 assert_file_contains "Generated config points secrets hook at repo-local wrapper" "entry = \".pragma-hooks/secrets.sh\"" "$target_repo/prek.toml"
+assert_file_contains "Generated config includes the artifact check" 'id = "generated-artifacts"' "$target_repo/prek.toml"
+assert_file_contains "Generated artifact hook uses the repo-local wrapper" 'entry = ".pragma-hooks/generated-artifacts.sh"' "$target_repo/prek.toml"
+assert_file_contains "Generated artifact wrapper resolves the shared checker" 'exec "$PRAGMA_HOME/lib/generated-artifacts.sh" "$@"' "$target_repo/.pragma-hooks/generated-artifacts.sh"
 assert_file_contains "Generated config points test hook at repo-local wrapper" "entry = \".pragma-hooks/test.sh\"" "$target_repo/prek.toml"
 assert_file_contains "Generated config includes an independent shadow hook" 'id = "pragma-shadow"' "$target_repo/prek.toml"
 assert_file_contains "Generated shadow hook uses the repo-local wrapper" 'entry = ".pragma-hooks/shadow.sh"' "$target_repo/prek.toml"
@@ -284,6 +294,15 @@ assert_command_fails_with "Missing target gets friendly error" "$missing_target 
 not_dir_target="$tmp_dir/not-a-dir"
 touch "$not_dir_target"
 assert_command_fails_with "Non-directory target gets friendly error" "$not_dir_target is not a directory" bash "$repo_copy/install.sh" --agent "$not_dir_target"
+
+git -C "$PRAGMA_DIR" ls-files --stage -z >"$tmp_dir/source-index-after"
+if cmp -s "$tmp_dir/source-index" "$tmp_dir/source-index-after"; then
+  printf 'PASS: self-install fixtures preserve the source index\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL: self-install fixtures changed the source index\n'
+  FAIL=$((FAIL + 1))
+fi
 
 printf '\nPassed: %s\n' "$PASS"
 printf 'Failed: %s\n' "$FAIL"
