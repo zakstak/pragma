@@ -139,6 +139,17 @@ expect_rejection 'Artifact check always runs on an empty commit' 'generated-arti
 git rm -q output/generated.png
 expect_success 'Deleting an existing artifact permits a real commit' git commit -m 'remove generated output'
 
+printf 'not staged\n' >intent.gguf
+git add -N intent.gguf
+printf 'authored change\n' >authored.txt
+git add authored.txt
+expect_success 'Intent-to-add artifacts do not block unrelated commits' git commit -m 'authored change'
+if git cat-file -e HEAD:intent.gguf 2>/dev/null; then
+  printf 'FAIL: intent-to-add artifact entered the commit\n'
+  exit 1
+fi
+git reset -q -- intent.gguf
+
 cat >hello.ts <<'TS'
 const unused: number = 42;
 TS
