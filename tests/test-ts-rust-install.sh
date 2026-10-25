@@ -145,12 +145,12 @@ import sys
 
 receipt_path, commit, archive = sys.argv[1:]
 receipt = json.loads(pathlib.Path(receipt_path).read_text())
-assert receipt["version"] == "0.3.0"
+assert receipt["version"] == "0.8.0"
 assert receipt["typescript_version"] == "7.1.0-dev"
 assert receipt["source_commit"] == commit
 assert receipt["platform"] == "linux-x64"
 assert receipt["archive_sha256"] == hashlib.sha256(pathlib.Path(archive).read_bytes()).hexdigest()
-assert receipt["url"].endswith("/v0.3.0/tsc-rs-0.3.0-linux-x64.tar.gz")
+assert receipt["url"].endswith("/v0.8.0/tsc-rs-0.8.0-linux-x64.tar.gz")
 assert len(receipt["binary_sha256"]) == 64
 PY
 printf 'PASS: TypeScript detection installs the owned compiler and complete library with provenance\n'

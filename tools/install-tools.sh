@@ -455,10 +455,10 @@ WRAPPER
 # tsc executable. Only the separately named tsc-rs wrapper enters the shared PATH.
 tsc_rs_archive_sha256() {
   case "$OS:$ARCH_KINGFISHER" in
-    linux:x64) printf '%s\n' '43e845ada6ed26bec76b75b333063a427ed1ae972c9d3a0caee71866bddf9fe0' ;;
-    linux:arm64) printf '%s\n' '93978fe6fe60fa6e4da9722131203a65ecac6eada41e79ce786cb8d2d1b9c653' ;;
-    darwin:x64) printf '%s\n' '75c886e92db7c27d667a6ff0f9880fe6530aba087b90aec6bc82f95aa4fa7ae4' ;;
-    darwin:arm64) printf '%s\n' '3536154507d63dce06786651d28f8e37560c864231855078a262287cde4020ef' ;;
+    linux:x64) printf '%s\n' '909bc899363a368f5f482494dfe22061510ee3389d1a34e7ee1b4dd6a26fd512' ;;
+    linux:arm64) printf '%s\n' '9f5f2cf7993f032a88b558921388662999d0ec5f7ad8e94edb142611be6f30c5' ;;
+    darwin:x64) printf '%s\n' 'dac6d4ba3219ab25083b3b39a82d74d1b9bb292913f1322dfd207e09151c7f80' ;;
+    darwin:arm64) printf '%s\n' '930ac252b90901ad6714522aaecdbc6b4e0151d8516b5caa406e68cfce7a34d3' ;;
     *) return 1 ;;
   esac
 }
