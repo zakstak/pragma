@@ -42,10 +42,10 @@ assert_contains "Installer extracts checksum entries robustly" '$2 == asset || $
 assert_not_contains "Installer avoids unchecked download helpers" "download_tarball()" "$PRAGMA_DIR/tools/install-tools.sh"
 assert_not_contains "Installer avoids latest references" "@latest" "$PRAGMA_DIR/tools/install-tools.sh"
 assert_contains "Installer restores pinned goimports build" "go build" "$PRAGMA_DIR/tools/install-tools.sh"
-assert_contains "Python requirements pin ruff" "ruff==0.17.0" "$PRAGMA_DIR/tools/requirements/python.txt"
-assert_contains "Python requirements pin pytest" "pytest==9.1.1" "$PRAGMA_DIR/tools/requirements/python.txt"
+assert_contains "Python requirements pin ruff" "ruff==0.17.3" "$PRAGMA_DIR/tools/requirements/python.txt"
+assert_contains "Python requirements pin pytest" "pytest==9.2.0" "$PRAGMA_DIR/tools/requirements/python.txt"
 assert_contains "npm lockfile includes prettier" '"prettier": "3.9.10"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
-assert_contains "npm lockfile includes oxlint" '"oxlint": "1.89.0"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
+assert_contains "npm lockfile includes oxlint" '"oxlint": "1.90.0"' "$PRAGMA_DIR/.npm-packages/package-lock.json"
 assert_contains "Repo ignores local venv" ".venv/" "$PRAGMA_DIR/.gitignore"
 
 printf '\nPassed: %s\n' "$PASS"
