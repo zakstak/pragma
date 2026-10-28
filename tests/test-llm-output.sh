@@ -324,6 +324,7 @@ assert_contains "Secret scan keeps output tail" '"tail":"secret found\npath=.env
 
 secret_args="$(<"$tmp_dir/kingfisher.args")"
 assert_contains "Secret scan uses staged changes only" "scan . --staged" "$secret_args"
+assert_contains "Secret scan includes staged blobs of every size" "--max-file-size 0" "$secret_args"
 assert_contains "Secret scan disables credential validation" "--no-validate" "$secret_args"
 assert_contains "Secret scan disables update checks" "--no-update-check" "$secret_args"
 assert_contains "Secret scan redacts findings" "--redact" "$secret_args"

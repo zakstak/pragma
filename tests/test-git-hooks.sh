@@ -187,16 +187,20 @@ git add answer.go
 expect_rejection 'golangci-lint v2 blocks Go errors' '"tool":"golangci-lint"' git commit -m 'Go lint rejection'
 git restore --staged --worktree answer.go
 
+# A tiny configured limit exercises the upstream staged-blob size filter.
+# The hook must preserve its complete staged scan instead of silently skipping.
+printf '%s\n' '---' 'filters:' '  max_file_size_mb: 0.00001' >kingfisher.yaml
 # Assemble a synthetic, nonfunctional PAT without putting a whole token in source.
 printf 'GITHUB_TOKEN=ghp_%s%s\n' '7aBcD9eFgH2iJkL4mN' 'oP6qRsT8uVwX0yZaB1' >credential.env
-git add credential.env
-expect_rejection 'Default secret rules block credential commits' '"tool":"kingfisher"' git commit -m 'secret rejection'
+git add credential.env kingfisher.yaml
+expect_rejection 'Secret rules block staged credentials despite a file-size limit' '"tool":"kingfisher"' git commit -m 'secret rejection'
 if grep -Fq "$(cut -d= -f2 credential.env)" "$log_file"; then
   printf 'FAIL: secret diagnostics exposed the token\n'
   exit 1
 fi
 printf 'PASS: secret diagnostics redact the token\n'
-git restore --staged credential.env
+git restore --staged credential.env kingfisher.yaml
+git restore --worktree kingfisher.yaml
 expect_success 'Unstaged secrets are outside commit scan scope' git commit --allow-empty -m 'unstaged secret fixture'
 rm credential.env
 

@@ -21,7 +21,7 @@ main() {
   [[ ! -f kingfisher.yaml ]] || config_path=kingfisher.yaml
 
   pragma_run "kingfisher" "secret" 0 "" "./lib/secrets.sh" "secret scan failed" \
-    kingfisher scan . --staged --no-validate --redact --quiet --no-update-check \
+    kingfisher scan . --staged --max-file-size 0 --no-validate --redact --quiet --no-update-check \
     --jobs 2 --config "$config_path" || record_failure
   exit_with_status
 }

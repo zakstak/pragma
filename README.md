@@ -530,9 +530,11 @@ regenerating configuration.
 ## Secret scanning
 
 Kingfisher scans staged changes with two workers. It redacts findings and
-disables credential validation and update checks. A finding or scanner error
-blocks the commit. The first scan can take longer while rules compile, and later
-scans reuse Kingfisher's rule cache.
+disables credential validation and update checks. The hook scans staged blobs
+regardless of size, overriding Kingfisher's file-size limit. Archive resource
+limits and timeouts remain active. A finding or scanner error blocks the commit.
+The first scan can take longer while rules compile, and later scans reuse
+Kingfisher's rule cache.
 
 Bootstrap copies `kingfisher.yaml` into the target repository if it is absent.
 The hook loads that file explicitly, using Pragma's defaults when it is missing.
