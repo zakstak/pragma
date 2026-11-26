@@ -14,7 +14,7 @@ assert_contains() {
   local expected="$2"
   local actual="$3"
 
-  if echo "$actual" | grep -qx "$expected"; then
+  if grep -Fqx -- "$expected" <<<"$actual"; then
     log_success "PASS: $label"
     PASS=$((PASS + 1))
   else
@@ -29,7 +29,7 @@ assert_not_contains() {
   local unexpected="$2"
   local actual="$3"
 
-  if ! echo "$actual" | grep -qx "$unexpected"; then
+  if ! grep -Fqx -- "$unexpected" <<<"$actual"; then
     log_success "PASS: $label"
     PASS=$((PASS + 1))
   else

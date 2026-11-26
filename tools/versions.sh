@@ -2,9 +2,9 @@
 # shellcheck disable=SC2034 # This file is sourced by installers.
 # Versions of shared fallback and core binaries.
 GOLANGCI_LINT_VERSION="v2.15.0"
-PREK_VERSION="v0.5.7"
+PREK_VERSION="v0.5.12"
 HADOLINT_VERSION="v2.15.1"
-KINGFISHER_VERSION="v2.15.0"
+KINGFISHER_VERSION="v2.20.0"
 SHELLCHECK_VERSION="v0.11.0"
 SHFMT_VERSION="v3.14.1"
 TAPLO_VERSION="0.10.0"

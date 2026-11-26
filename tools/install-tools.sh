@@ -386,10 +386,10 @@ install_kingfisher() {
   local expected_sha
 
   case "$OS:$ARCH_KINGFISHER" in
-    linux:x64) expected_sha="f7482b74bf2a67cfbfbd80767228a1976f28bf4872f9d3f0b457f710acd4de9f" ;;
-    linux:arm64) expected_sha="3c4c6a27e10fd10170dbca78015656a5621e6c6c72ce07f9d0eab24cda40378b" ;;
-    darwin:x64) expected_sha="802207fdd2839613cb34a8da5fe782269cb8b6bf2878b2032f9d62ad31d6c6b1" ;;
-    darwin:arm64) expected_sha="b65229014e09776b4d1ae539300fae35439d4d48bab2d9f2b624cafaee32e138" ;;
+    linux:x64) expected_sha="825a5e89cdf6c0d52e85bf029061f76ad6ba7cc6e55406c6eb9f68572ee6b774" ;;
+    linux:arm64) expected_sha="245c34ee00caf24bffe9fed54a23bcb617fe95a0755ff881ef7d2c869f9d4ad7" ;;
+    darwin:x64) expected_sha="480cafe7e0ffc61d5287417eceff08c867c92a3e612689c27133fe801d342a47" ;;
+    darwin:arm64) expected_sha="eade605f6c4ae091aeb06e186b9d3d802b4c4a222956f661991f2b16d6655ab3" ;;
   esac
 
   download_archive_with_expected_sha256 kingfisher \
