@@ -2,8 +2,8 @@
   "name": "pragma-npm-tools",
   "private": true,
   "dependencies": {
-    "oxlint": "1.90.0",
-    "prettier": "3.9.10"
+    "oxlint": "1.95.0",
+    "prettier": "3.10.1"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
